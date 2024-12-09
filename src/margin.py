@@ -4,12 +4,11 @@ from typing import Optional, Union, List, Dict, Any
 from web3.contract import Contract
 import json
 
-class MarginAccountSDK:
+class MarginAccount:
     def __init__(
         self,
         web3: Web3,
         contract_address: str,
-        contract_abi: List[Dict[str, Any]],
         private_key: Optional[str] = None
     ):
         """
@@ -18,12 +17,15 @@ class MarginAccountSDK:
         Args:
             web3: Web3 instance
             contract_address: Address of the deployed MarginAccount contract
-            contract_abi: ABI of the MarginAccount contract
             private_key: Private key for signing transactions (optional)
         """
         self.web3 = web3
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.private_key = private_key
+        
+        # Load ABI from JSON file
+        with open('abi/marginaccount.json', 'r') as f:
+            contract_abi = json.load(f)
         
         self.contract = self.web3.eth.contract(
             address=self.contract_address,
@@ -142,3 +144,5 @@ class MarginAccountSDK:
             tx_hash = transaction.transact(transaction_dict)
             
         return tx_hash.hex()
+
+__all__ = ['MarginAccount']

@@ -1,18 +1,22 @@
 from web3 import Web3
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Tuple, Dict, Any, NamedTuple
 from dataclasses import dataclass
+from decimal import Decimal
 import json
 
-@dataclass
-class OrderPriceSize:
-    price: float
-    size: float
-
-@dataclass
-class L2Book:
-    block_num: int
-    buy_orders: List[OrderPriceSize]
-    sell_orders: List[OrderPriceSize]
+class OrderbookError:
+    class NormalizationError(Exception):
+        pass
+    class EncodingError(Exception):
+        pass
+    class GasPriceError(Exception):
+        pass
+    class TransactionError(Exception):
+        pass
+    class GasEstimationError(Exception):
+        def __init__(self, message: str):
+            self.message = message
+            super().__init__(self.message)
 
 @dataclass
 class MarketParams:
@@ -33,32 +37,32 @@ class Orderbook:
         self,
         web3: Web3,
         contract_address: str,
-        contract_abi: List[Dict[str, Any]],
         private_key: Optional[str] = None
     ):
         """
-        Initialize the Orderbook
+        Initialize the Orderbook SDK
         
         Args:
             web3: Web3 instance
             contract_address: Address of the deployed Orderbook contract
-            contract_abi: ABI of the Orderbook contract
             private_key: Private key for signing transactions (optional)
         """
         self.web3 = web3
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.private_key = private_key
         
+        # Load ABI from JSON file
+        with open('abi/orderbook.json', 'r') as f:
+            contract_abi = json.load(f)
+        
         self.contract = self.web3.eth.contract(
             address=self.contract_address,
             abi=contract_abi
         )
         
-        # Initialize market parameters
         self.market_params = self._fetch_market_params()
 
     def _fetch_market_params(self) -> MarketParams:
-        """Fetch market parameters from the contract"""
         params = self.contract.functions.getMarketParams().call()
         return MarketParams(
             price_precision=params[0],
@@ -74,277 +78,326 @@ class Orderbook:
             maker_fee_bps=params[10]
         )
 
-    async def _build_and_send_transaction(self, function, value: int = 0):
-        """Helper method to build and send transactions"""
-        from_address = self.web3.eth.account.from_key(self.private_key).address if self.private_key else None
-        
-        # Get gas estimate and nonce
-        if from_address:
-            gas_estimate = await function.estimate_gas({'from': from_address, 'value': value})
-            nonce = self.web3.eth.get_transaction_count(from_address)
-            
-            # Build transaction dict
-            transaction_dict = {
-                'from': from_address,
-                'nonce': nonce,
-                'gas': gas_estimate,
-                'gasPrice': self.web3.eth.gas_price,
-                'value': value
-            }
-            
-            # Sign and send transaction
-            raw_transaction = function.build_transaction(transaction_dict)
-            signed_txn = self.web3.eth.account.sign_transaction(raw_transaction, self.private_key)
-            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
-        else:
-            # Let the user's wallet handle signing
-            tx_hash = await function.transact({'value': value})
-            
-        return tx_hash.hex()
-
-    async def add_buy_order(self, price: int, size: int, post_only: bool = False) -> str:
-        """
-        Place a limit buy order
-        
-        Args:
-            price: Price of the buy order
-            size: Size of the buy order
-            post_only: If True, order will only be placed if it would be a maker order
-            
-        Returns:
-            transaction_hash: Hash of the submitted transaction
-        """
-        function = self.contract.functions.addBuyOrder(price, size, post_only)
-        return await self._build_and_send_transaction(function)
-
-    async def add_sell_order(self, price: int, size: int, post_only: bool = False) -> str:
-        """
-        Place a limit sell order
-        
-        Args:
-            price: Price of the sell order
-            size: Size of the sell order
-            post_only: If True, order will only be placed if it would be a maker order
-            
-        Returns:
-            transaction_hash: Hash of the submitted transaction
-        """
-        function = self.contract.functions.addSellOrder(price, size, post_only)
-        return await self._build_and_send_transaction(function)
-
-    async def place_market_buy(
-        self, 
-        quote_size: int, 
-        min_amount_out: int,
-        use_margin: bool = False,
-        fill_or_kill: bool = False
-    ) -> str:
-        """
-        Place a market buy order
-        
-        Args:
-            quote_size: Amount of quote asset to spend
-            min_amount_out: Minimum amount of base asset to receive
-            use_margin: Whether to use margin account
-            fill_or_kill: Whether to revert if full quantity cannot be filled
-            
-        Returns:
-            transaction_hash: Hash of the submitted transaction
-        """
-        function = self.contract.functions.placeAndExecuteMarketBuy(
-            quote_size,
-            min_amount_out,
-            use_margin,
-            fill_or_kill
-        )
-        return await self._build_and_send_transaction(function)
-
-    async def place_market_sell(
-        self,
-        size: int,
-        min_amount_out: int,
-        use_margin: bool = False,
-        fill_or_kill: bool = False
-    ) -> str:
-        """
-        Place a market sell order
-        
-        Args:
-            size: Amount of base asset to sell
-            min_amount_out: Minimum amount of quote asset to receive
-            use_margin: Whether to use margin account
-            fill_or_kill: Whether to revert if full quantity cannot be filled
-            
-        Returns:
-            transaction_hash: Hash of the submitted transaction
-        """
-        function = self.contract.functions.placeAndExecuteMarketSell(
-            size,
-            min_amount_out,
-            use_margin,
-            fill_or_kill
-        )
-        return await self._build_and_send_transaction(function)
-
-    async def batch_cancel_orders(self, order_ids: List[int]) -> str:
-        """
-        Cancel multiple orders in batch
-        
-        Args:
-            order_ids: List of order IDs to cancel
-            
-        Returns:
-            transaction_hash: Hash of the submitted transaction
-        """
-        function = self.contract.functions.batchCancelOrders(order_ids)
-        return await self._build_and_send_transaction(function)
-
-    async def batch_update(
-        self,
-        buy_prices: List[int],
-        buy_sizes: List[int],
-        sell_prices: List[int],
-        sell_sizes: List[int],
-        cancel_order_ids: List[int],
-        post_only: bool = False
-    ) -> str:
-        """
-        Batch update orders - place multiple buy/sell orders and cancel orders in one transaction
-        
-        Args:
-            buy_prices: List of buy order prices
-            buy_sizes: List of buy order sizes
-            sell_prices: List of sell order prices
-            sell_sizes: List of sell order sizes
-            cancel_order_ids: List of order IDs to cancel
-            post_only: If True, orders will only be placed if they would be maker orders
-            
-        Returns:
-            transaction_hash: Hash of the submitted transaction
-        """
-        function = self.contract.functions.batchUpdate(
-            buy_prices,
-            buy_sizes,
-            sell_prices,
-            sell_sizes,
-            cancel_order_ids,
-            post_only
-        )
-        return await self._build_and_send_transaction(function)
-
-    async def get_best_bid_ask(self) -> Tuple[int, int]:
-        """
-        Get best bid and ask prices
-        
-        Returns:
-            Tuple containing (best_bid, best_ask)
-        """
-        return await self.contract.functions.bestBidAsk().call()
-
-    def _bytes_to_int(data: bytes, start: int, length: int = 32) -> int:
-        """Convert bytes to integer"""
-        return int.from_bytes(data[start:start + length], byteorder='big')
-
-    def decode_l2_book(self, data: bytes, price_precision: float, size_precision: float) -> L2Book:
-        """
-        Decode the L2 book data from bytes
-        
-        Args:
-            data: Raw bytes data from the contract
-            price_precision: Price precision as float
-            size_precision: Size precision as float
-            
-        Returns:
-            L2Book object containing the decoded order book data
-        """
-        offset = 0
-        
-        # Get block number from first 32 bytes
-        block_num = self._bytes_to_int(data, offset)
-        offset += 32
-
-        buy_orders = []
-        sell_orders = []
-        current_orders = buy_orders
-
-        while offset + 32 <= len(data):
-            price_bytes = data[offset:offset + 32]
-            price = self._bytes_to_int(price_bytes)
-
-            # Check for zero price (separator between buy and sell orders)
-            if price == 0:
-                current_orders = sell_orders
-                offset += 32
-                continue
-
-            if offset + 64 > len(data):
-                break
-
-            size_bytes = data[offset + 32:offset + 64]
-            size = self._bytes_to_int(size_bytes)
-
-            # Convert to float and adjust for precision
-            price_float = float(price) / price_precision
-            size_float = float(size) / size_precision
-
-            current_orders.append(OrderPriceSize(
-                price=price_float,
-                size=size_float
-            ))
-
-            offset += 64
-
-        # Reverse sell orders to match Rust implementation
-        sell_orders.reverse()
-
-        return L2Book(
-            block_num=block_num,
-            buy_orders=buy_orders,
-            sell_orders=sell_orders
-        )
-
-    async def amm_prices(self) -> Tuple[List[OrderPriceSize], List[OrderPriceSize]]:
-        """
-        Get AMM prices - implement this based on your AMM logic
-        Returns tuple of (buy_orders, sell_orders)
-        """
-        # This is a placeholder - implement according to your AMM logic
-        return [], []
-
-    async def fetch_orderbook(self) -> L2Book:
-        """
-        Fetch and decode the complete L2 order book
-        
-        Returns:
-            L2Book object containing the complete order book data
-        """
+    def normalize_with_precision(self, price: str, size: str) -> Tuple[int, int]:
+        """Normalize price and size with contract precision"""
         try:
-            # Get raw L2 book data
-            l2_book = await self.contract.functions.getL2Book().call()
+            price_normalized = float(price) * float(str(self.market_params.price_precision))
+            size_normalized = float(size) * float(str(self.market_params.size_precision))
             
-            # Convert precision to float
-            price_precision_float = float(self.market_params.price_precision)
-            size_precision_float = float(self.market_params.size_precision)
+            return (int(price_normalized), int(size_normalized))
+        except (ValueError, TypeError) as e:
+            raise OrderbookError.NormalizationError(f"Error normalizing values: {str(e)}")
+
+    async def _prepare_transaction(
+        self, 
+        function_name: str, 
+        args: List[Any],
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None,
+        value: int = 0
+    ) -> Dict:
+        """Helper method to prepare transaction parameters"""
+        func = self.contract.get_function_by_name(function_name)
+        data = func.encode_input(*args)
+        
+        tx = {
+            'to': self.contract_address,
+            'value': value,
+            'data': data,
+            'from': self.web3.eth.default_account if not self.private_key else
+                   self.web3.eth.account.from_key(self.private_key).address
+        }
+
+        tx['gasPrice'] = gas_price if gas_price is not None else \
+                        await self.web3.eth.gas_price
+
+        if gas_limit is None:
+            estimated_gas = await self.web3.eth.estimate_gas(tx)
+            tx['gas'] = estimated_gas * 3 // 2
+        else:
+            tx['gas'] = gas_limit
+
+        if nonce is not None:
+            tx['nonce'] = nonce
+
+        return tx
+
+    async def _execute_transaction(self, tx: Dict) -> Tuple[str, Optional[int]]:
+        """Execute prepared transaction and return hash and order ID if applicable"""
+        try:
+            if self.private_key:
+                signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
+                tx_hash = await self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            else:
+                tx_hash = await self.web3.eth.send_transaction(tx)
+                
+            receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            order_id = self._get_order_id_from_receipt(receipt)
             
-            # Decode the book
-            book = self.decode_l2_book(
-                l2_book,
-                price_precision_float,
-                size_precision_float
-            )
-            
-            # Get AMM prices
-            amm_buy_orders, amm_sell_orders = await self.amm_prices()
-            
-            # Combine orderbook and AMM orders
-            new_buy_orders = book.buy_orders + amm_buy_orders
-            new_sell_orders = book.sell_orders + amm_sell_orders
-            
-            return L2Book(
-                block_num=book.block_num,
-                buy_orders=new_buy_orders,
-                sell_orders=new_sell_orders
-            )
-            
+            return (tx_hash.hex(), order_id)
         except Exception as e:
-            raise Exception(f"Error fetching orderbook: {str(e)}")
+            raise OrderbookError.TransactionError(f"Error executing transaction: {str(e)}")
+
+    async def prepare_buy_order(
+        self,
+        price: str,
+        size: str,
+        post_only: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Dict:
+        price_normalized, size_normalized = self.normalize_with_precision(price, size)
+        return await self._prepare_transaction(
+            "addBuyOrder",
+            [price_normalized, size_normalized, post_only],
+            nonce,
+            gas_price,
+            gas_limit
+        )
+
+    async def add_buy_order(
+        self,
+        price: str,
+        size: str,
+        post_only: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Tuple[str, int]:
+        tx = await self.prepare_buy_order(price, size, post_only, nonce, gas_price, gas_limit)
+        return await self._execute_transaction(tx)
+
+    async def prepare_sell_order(
+        self,
+        price: str,
+        size: str,
+        post_only: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Dict:
+        price_normalized, size_normalized = self.normalize_with_precision(price, size)
+        return await self._prepare_transaction(
+            "addSellOrder",
+            [price_normalized, size_normalized, post_only],
+            nonce,
+            gas_price,
+            gas_limit
+        )
+
+    async def add_sell_order(
+        self,
+        price: str,
+        size: str,
+        post_only: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Tuple[str, int]:
+        tx = await self.prepare_sell_order(price, size, post_only, nonce, gas_price, gas_limit)
+        return await self._execute_transaction(tx)
+
+    async def prepare_batch_cancel_orders(
+        self,
+        order_ids: List[int],
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Dict:
+        return await self._prepare_transaction(
+            "batchCancelOrders",
+            [order_ids],
+            nonce,
+            gas_price,
+            gas_limit
+        )
+
+    async def batch_cancel_orders(
+        self,
+        order_ids: List[int],
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> str:
+        tx = await self.prepare_batch_cancel_orders(order_ids, nonce, gas_price, gas_limit)
+        tx_hash, _ = await self._execute_transaction(tx)
+        return tx_hash
+
+    async def prepare_market_buy(
+        self,
+        size: str,
+        min_amount_out: str,
+        is_margin: bool,
+        fill_or_kill: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Dict:
+        size_normalized = float(size) * float(str(self.market_params.price_precision))
+        min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
+        
+        return await self._prepare_transaction(
+            "placeAndExecuteMarketBuy",
+            [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
+            nonce,
+            gas_price,
+            gas_limit
+        )
+
+    async def market_buy(
+        self,
+        size: str,
+        min_amount_out: str,
+        is_margin: bool,
+        fill_or_kill: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> str:
+        tx = await self.prepare_market_buy(
+            size, min_amount_out, is_margin, fill_or_kill, 
+            nonce, gas_price, gas_limit
+        )
+        tx_hash, _ = await self._execute_transaction(tx)
+        return tx_hash
+
+    async def prepare_market_sell(
+        self,
+        size: str,
+        min_amount_out: str,
+        is_margin: bool,
+        fill_or_kill: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Dict:
+        size_normalized = float(size) * float(str(self.market_params.size_precision))
+        min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
+        
+        return await self._prepare_transaction(
+            "placeAndExecuteMarketSell",
+            [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
+            nonce,
+            gas_price,
+            gas_limit
+        )
+
+    async def market_sell(
+        self,
+        size: str,
+        min_amount_out: str,
+        is_margin: bool,
+        fill_or_kill: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> str:
+        tx = await self.prepare_market_sell(
+            size, min_amount_out, is_margin, fill_or_kill,
+            nonce, gas_price, gas_limit
+        )
+        tx_hash, _ = await self._execute_transaction(tx)
+        return tx_hash
+
+    async def prepare_batch_orders(
+        self,
+        buy_prices: List[str],
+        buy_sizes: List[str],
+        sell_prices: List[str],
+        sell_sizes: List[str],
+        order_ids_to_cancel: List[str],
+        post_only: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> Dict:
+        normalized_buy_prices = []
+        normalized_buy_sizes = []
+        normalized_sell_prices = []
+        normalized_sell_sizes = []
+        
+        for price, size in zip(buy_prices, buy_sizes):
+            price_norm, size_norm = self.normalize_with_precision(price, size)
+            normalized_buy_prices.append(price_norm)
+            normalized_buy_sizes.append(size_norm)
+            
+        for price, size in zip(sell_prices, sell_sizes):
+            price_norm, size_norm = self.normalize_with_precision(price, size)
+            normalized_sell_prices.append(price_norm)
+            normalized_sell_sizes.append(size_norm)
+
+        order_ids = [int(order_id) for order_id in order_ids_to_cancel]
+        
+        return await self._prepare_transaction(
+            "batchUpdate",
+            [
+                normalized_buy_prices,
+                normalized_buy_sizes,
+                normalized_sell_prices,
+                normalized_sell_sizes,
+                order_ids,
+                post_only
+            ],
+            nonce,
+            gas_price,
+            gas_limit
+        )
+
+    async def batch_orders(
+        self,
+        buy_prices: List[str],
+        buy_sizes: List[str],
+        sell_prices: List[str],
+        sell_sizes: List[str],
+        order_ids_to_cancel: List[str],
+        post_only: bool,
+        nonce: Optional[int] = None,
+        gas_price: Optional[int] = None,
+        gas_limit: Optional[int] = None
+    ) -> str:
+        tx = await self.prepare_batch_orders(
+            buy_prices, buy_sizes, sell_prices, sell_sizes,
+            order_ids_to_cancel, post_only, nonce, gas_price, gas_limit
+        )
+        tx_hash, _ = await self._execute_transaction(tx)
+        return tx_hash
+
+    def _get_order_id_from_receipt(self, receipt: Dict) -> Optional[int]:
+      """
+      Extract order ID from transaction receipt logs
+      
+      Args:
+          receipt: Transaction receipt containing logs
+          
+      Returns:
+          Order ID as integer or None if not found
+        """
+      try:
+          if not receipt.get('logs') or len(receipt['logs']) == 0:
+              return None
+              
+          # Get the first log
+          log = receipt['logs'][0]
+          
+          # Get the log data without '0x' prefix
+          data = log['data'][2:]
+          
+          # Split data into 32-byte chunks
+          chunks = [data[i:i+64] for i in range(0, len(data), 64)]
+          
+          if not chunks:
+              return None
+              
+          # Convert first chunk to integer
+          order_id = int(chunks[0], 16)
+          
+          return order_id
+      except Exception as e:
+          print(f"Error extracting order ID: {str(e)}")
+          return None
+      
+
+
+__all__ = ['Orderbook']
