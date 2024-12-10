@@ -90,7 +90,6 @@ class Orderbook:
         try:
             price_normalized = float(price) * float(str(self.market_params.price_precision))
             size_normalized = float(size) * float(str(self.market_params.size_precision))
-            
             return (int(price_normalized), int(size_normalized))
         except (ValueError, TypeError) as e:
             raise OrderbookError.NormalizationError(f"Error normalizing values: {str(e)}")
@@ -155,9 +154,8 @@ class Orderbook:
                 tx_hash = self.web3.eth.send_transaction(tx)
                 
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
-            order_id = self._get_order_id_from_receipt(receipt)
             
-            return (tx_hash.hex(), order_id)
+            return tx_hash.hex()
         except Exception as e:
             raise OrderbookError.TransactionError(f"Error executing transaction: {str(e)}")
 
@@ -204,11 +202,9 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Tuple[str, int]:
-        tx = await self.prepare_sell_order(price, size, post_only, nonce, gas_price, gas_limit)
+        tx = await self.prepare_sell_order(price, size, post_only, tx_options)
         return await self._execute_transaction(tx)
 
     async def prepare_batch_cancel_orders(
@@ -228,7 +224,7 @@ class Orderbook:
         tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_batch_cancel_orders(order_ids, tx_options)
-        tx_hash, _ = await self._execute_transaction(tx)
+        tx_hash = await self._execute_transaction(tx)
         return tx_hash
     
 
@@ -261,7 +257,7 @@ class Orderbook:
             size, min_amount_out, is_margin, fill_or_kill, 
             tx_options
         )
-        tx_hash, _ = await self._execute_transaction(tx)
+        tx_hash = await self._execute_transaction(tx)
         return tx_hash
 
 
@@ -275,7 +271,6 @@ class Orderbook:
     ) -> Dict:
         size_normalized = float(size) * float(str(self.market_params.size_precision))
         min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
-        
         return await self._prepare_transaction(
             "placeAndExecuteMarketSell",
             [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
@@ -294,7 +289,8 @@ class Orderbook:
             size, min_amount_out, is_margin, fill_or_kill,
             tx_options
         )
-        tx_hash, _ = await self._execute_transaction(tx)
+        tx_hash = await self._execute_transaction(tx)
+        print(f"Market sell transaction hash: {tx_hash}")
         return tx_hash
 
     async def prepare_batch_orders(
@@ -351,43 +347,7 @@ class Orderbook:
             buy_prices, buy_sizes, sell_prices, sell_sizes,
             order_ids_to_cancel, post_only, tx_options
         )
-        tx_hash, _ = await self._execute_transaction(tx)
+        tx_hash = await self._execute_transaction(tx)
         return tx_hash
-
-    def _get_order_id_from_receipt(self, receipt: Dict) -> Optional[int]:
-      """
-      Extract order ID from transaction receipt logs
       
-      Args:
-          receipt: Transaction receipt containing logs
-          
-      Returns:
-          Order ID as integer or None if not found
-        """
-      try:
-          if not receipt.get('logs') or len(receipt['logs']) == 0:
-              return None
-              
-          # Get the first log
-          log = receipt['logs'][0]
-          
-          # Get the log data without '0x' prefix
-          data = log['data'][2:]
-          
-          # Split data into 32-byte chunks
-          chunks = [data[i:i+64] for i in range(0, len(data), 64)]
-          
-          if not chunks:
-              return None
-              
-          # Convert first chunk to integer
-          order_id = int(chunks[0], 16)
-          
-          return order_id
-      except Exception as e:
-          print(f"Error extracting order ID: {str(e)}")
-          return None
-      
-
-
 __all__ = ['Orderbook']

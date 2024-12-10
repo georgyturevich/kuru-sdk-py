@@ -13,11 +13,11 @@ import argparse
 import asyncio
 
 # Network and contract configuration
-NETWORK_RPC = "http://localhost:8545"
+NETWORK_RPC = "https://devnet1.monad.xyz/rpc/WbScX50z7Xsvsuk6UB1uMci8Ekee3PJqhBZ2RRx0xSjyqx9hjipbfMh60vr7a1gS"  # Local network
 ADDRESSES = {
-    'orderbook': '0x29BdC6fc3Bb87fb461Bd41DBc50f9097123f6aef',
-    'usdc': '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-    'wbtc': '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+    'orderbook': '0xccc921db74c564cb81c0820a0ed6be174c4baec4',
+    'usdc': '0x34084eAEbe9Cbc209A85FFe22fa387223CDFB3e8',
+    'wbtc': '0xf4f7ca3c361cA2B457Ca6AC9E393B2dad5C6b78b'
 }
 
 async def place_limit_buy(orderbook: Orderbook, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):

@@ -90,7 +90,7 @@ class MarginAccount:
             tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         else:
             # Let the user's wallet handle signing
-            tx_hash = transaction.transact(transaction_dict)
+            raise Exception("Private key is required to deposit tokens into the margin account")
             
         return tx_hash.hex()
 
@@ -140,8 +140,7 @@ class MarginAccount:
             )
             tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         else:
-            # Let the user's wallet handle signing
-            tx_hash = transaction.transact(transaction_dict)
+            raise Exception("Private key is required to withdraw tokens from the margin account")
             
         return tx_hash.hex()
 
