@@ -87,7 +87,7 @@ class MarginAccount:
                 raw_transaction,
                 self.private_key
             )
-            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         else:
             # Let the user's wallet handle signing
             tx_hash = transaction.transact(transaction_dict)
@@ -138,7 +138,7 @@ class MarginAccount:
                 raw_transaction,
                 self.private_key
             )
-            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         else:
             # Let the user's wallet handle signing
             tx_hash = transaction.transact(transaction_dict)

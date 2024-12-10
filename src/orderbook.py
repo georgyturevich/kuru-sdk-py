@@ -32,6 +32,13 @@ class MarketParams:
     taker_fee_bps: int
     maker_fee_bps: int
 
+@dataclass
+class TxOptions:
+    gas_limit: Optional[int] = None
+    gas_price: Optional[int] = None  # Used as maxFeePerGas
+    max_priority_fee_per_gas: Optional[int] = None
+    nonce: Optional[int] = None
+
 class Orderbook:
     def __init__(
         self,
@@ -92,34 +99,49 @@ class Orderbook:
         self, 
         function_name: str, 
         args: List[Any],
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None,
+        tx_options: TxOptions,
         value: int = 0
     ) -> Dict:
         """Helper method to prepare transaction parameters"""
-        func = self.contract.get_function_by_name(function_name)
-        data = func.encode_input(*args)
+        func = getattr(self.contract.functions, function_name)(*args)
         
         tx = {
             'to': self.contract_address,
             'value': value,
-            'data': data,
+            'data': func._encode_transaction_data(),
             'from': self.web3.eth.default_account if not self.private_key else
-                   self.web3.eth.account.from_key(self.private_key).address
+                   self.web3.eth.account.from_key(self.private_key).address,
+            'type': '0x2',  # EIP-1559 transaction type
+            'chainId': self.web3.eth.chain_id
         }
 
-        tx['gasPrice'] = gas_price if gas_price is not None else \
-                        await self.web3.eth.gas_price
-
-        if gas_limit is None:
-            estimated_gas = await self.web3.eth.estimate_gas(tx)
-            tx['gas'] = estimated_gas * 3 // 2
+        # Get base fee from latest block
+        base_fee = self.web3.eth.get_block('latest')['baseFeePerGas']
+        
+        # Set maxPriorityFeePerGas (tip) and maxFeePerGas
+        if tx_options.gas_price is not None:
+            tx['maxFeePerGas'] = tx_options.gas_price
+            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or min(tx_options.gas_price - base_fee, tx_options.gas_price // 4)
         else:
-            tx['gas'] = gas_limit
+            # Default to 2x current base fee for maxFeePerGas
+            tx['maxFeePerGas'] = base_fee * 2
+            # Default priority fee (can be adjusted based on network conditions)
+            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or self.web3.eth.max_priority_fee
 
-        if nonce is not None:
-            tx['nonce'] = nonce
+        # Ensure maxPriorityFeePerGas is not greater than maxFeePerGas
+        if tx['maxPriorityFeePerGas'] > tx['maxFeePerGas']:
+            tx['maxPriorityFeePerGas'] = tx['maxFeePerGas']
+        
+        if tx_options.gas_limit is None:
+            estimated_gas = self.web3.eth.estimate_gas(tx)
+            tx['gas'] = estimated_gas
+        else:
+            tx['gas'] = tx_options.gas_limit
+
+        if tx_options.nonce is not None:
+            tx['nonce'] = tx_options.nonce
+        else:
+            tx['nonce'] = self.web3.eth.get_transaction_count(tx['from'])
 
         return tx
 
@@ -128,11 +150,11 @@ class Orderbook:
         try:
             if self.private_key:
                 signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
-                tx_hash = await self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+                tx_hash = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
             else:
-                tx_hash = await self.web3.eth.send_transaction(tx)
+                tx_hash = self.web3.eth.send_transaction(tx)
                 
-            receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
             order_id = self._get_order_id_from_receipt(receipt)
             
             return (tx_hash.hex(), order_id)
@@ -144,17 +166,13 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Dict:
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
         return await self._prepare_transaction(
             "addBuyOrder",
             [price_normalized, size_normalized, post_only],
-            nonce,
-            gas_price,
-            gas_limit
+            tx_options
         )
 
     async def add_buy_order(
@@ -162,11 +180,9 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Tuple[str, int]:
-        tx = await self.prepare_buy_order(price, size, post_only, nonce, gas_price, gas_limit)
+        tx = await self.prepare_buy_order(price, size, post_only, tx_options)
         return await self._execute_transaction(tx)
 
     async def prepare_sell_order(
@@ -174,17 +190,13 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Dict:
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
         return await self._prepare_transaction(
             "addSellOrder",
             [price_normalized, size_normalized, post_only],
-            nonce,
-            gas_price,
-            gas_limit
+            tx_options
         )
 
     async def add_sell_order(
@@ -202,28 +214,23 @@ class Orderbook:
     async def prepare_batch_cancel_orders(
         self,
         order_ids: List[int],
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Dict:
         return await self._prepare_transaction(
             "batchCancelOrders",
             [order_ids],
-            nonce,
-            gas_price,
-            gas_limit
+            tx_options
         )
 
     async def batch_cancel_orders(
         self,
         order_ids: List[int],
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_batch_cancel_orders(order_ids, nonce, gas_price, gas_limit)
+        tx = await self.prepare_batch_cancel_orders(order_ids, tx_options)
         tx_hash, _ = await self._execute_transaction(tx)
         return tx_hash
+    
 
     async def prepare_market_buy(
         self,
@@ -231,9 +238,7 @@ class Orderbook:
         min_amount_out: str,
         is_margin: bool,
         fill_or_kill: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Dict:
         size_normalized = float(size) * float(str(self.market_params.price_precision))
         min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
@@ -241,9 +246,7 @@ class Orderbook:
         return await self._prepare_transaction(
             "placeAndExecuteMarketBuy",
             [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
-            nonce,
-            gas_price,
-            gas_limit
+            tx_options
         )
 
     async def market_buy(
@@ -252,16 +255,15 @@ class Orderbook:
         min_amount_out: str,
         is_margin: bool,
         fill_or_kill: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_market_buy(
             size, min_amount_out, is_margin, fill_or_kill, 
-            nonce, gas_price, gas_limit
+            tx_options
         )
         tx_hash, _ = await self._execute_transaction(tx)
         return tx_hash
+
 
     async def prepare_market_sell(
         self,
@@ -269,9 +271,7 @@ class Orderbook:
         min_amount_out: str,
         is_margin: bool,
         fill_or_kill: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Dict:
         size_normalized = float(size) * float(str(self.market_params.size_precision))
         min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
@@ -279,9 +279,7 @@ class Orderbook:
         return await self._prepare_transaction(
             "placeAndExecuteMarketSell",
             [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
-            nonce,
-            gas_price,
-            gas_limit
+            tx_options
         )
 
     async def market_sell(
@@ -290,13 +288,11 @@ class Orderbook:
         min_amount_out: str,
         is_margin: bool,
         fill_or_kill: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_market_sell(
             size, min_amount_out, is_margin, fill_or_kill,
-            nonce, gas_price, gas_limit
+            tx_options
         )
         tx_hash, _ = await self._execute_transaction(tx)
         return tx_hash
@@ -309,9 +305,7 @@ class Orderbook:
         sell_sizes: List[str],
         order_ids_to_cancel: List[str],
         post_only: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> Dict:
         normalized_buy_prices = []
         normalized_buy_sizes = []
@@ -340,9 +334,7 @@ class Orderbook:
                 order_ids,
                 post_only
             ],
-            nonce,
-            gas_price,
-            gas_limit
+            tx_options
         )
 
     async def batch_orders(
@@ -353,13 +345,11 @@ class Orderbook:
         sell_sizes: List[str],
         order_ids_to_cancel: List[str],
         post_only: bool,
-        nonce: Optional[int] = None,
-        gas_price: Optional[int] = None,
-        gas_limit: Optional[int] = None
+        tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_batch_orders(
             buy_prices, buy_sizes, sell_prices, sell_sizes,
-            order_ids_to_cancel, post_only, nonce, gas_price, gas_limit
+            order_ids_to_cancel, post_only, tx_options
         )
         tx_hash, _ = await self._execute_transaction(tx)
         return tx_hash
