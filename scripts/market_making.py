@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -11,6 +12,10 @@ from decimal import Decimal
 from typing import Optional
 import aiohttp
 from web3 import Web3
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from src.order_executor import OrderExecutor, OrderRequest, TxOptions
 
@@ -121,7 +126,7 @@ class MarketMaker:
             await self.order_executor.disconnect()
 
 
-NETWORK_RPC = "https://devnet1.monad.xyz/rpc/WbScX50z7Xsvsuk6UB1uMci8Ekee3PJqhBZ2RRx0xSjyqx9hjipbfMh60vr7a1gS"  # Local network
+NETWORK_RPC = os.getenv("RPC_URL")
 ADDRESSES = {
     'orderbook': '0x336bd8b100d572cb3b4af481ace50922420e6d1b',
     'usdc': '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
@@ -132,7 +137,7 @@ async def main():
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     contract_address = ADDRESSES['orderbook']
     websocket_url = 'https://ws.staging.kuru.io'
-    private_key = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+    private_key = os.getenv("PK")
 
     market_maker = MarketMaker(
         web3=web3,

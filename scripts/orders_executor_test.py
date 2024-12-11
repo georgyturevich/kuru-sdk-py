@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,8 +15,13 @@ from web3 import Web3
 from src.order_executor import OrderExecutor, OrderRequest
 from src.margin import MarginAccount
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Use the same configuration as in orders.py
-NETWORK_RPC = "https://devnet1.monad.xyz/rpc/WbScX50z7Xsvsuk6UB1uMci8Ekee3PJqhBZ2RRx0xSjyqx9hjipbfMh60vr7a1gS"  # Local network
+# NETWORK_RPC = "https://devnet1.monad.xyz/rpc/WbScX50z7Xsvsuk6UB1uMci8Ekee3PJqhBZ2RRx0xSjyqx9hjipbfMh60vr7a1gS"  # Local network
+NETWORK_RPC = os.getenv("RPC_URL")
 ADDRESSES = {
     'orderbook': '0x336bd8b100d572cb3b4af481ace50922420e6d1b',
     'margin': '0x67da6CA8F829a7A51701Eb3dB2296d349fBC3832',
@@ -30,8 +36,8 @@ async def test_order_executor():
     # Initialize Web3 and OrderExecutor
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     contract_address = ADDRESSES['orderbook']
-    websocket_url = "https://ws.staging.kuru.io"  # Make sure this is the correct WebSocket URL
-    private_key = "0xa31d0eeff3db5f7b7872ebe47123caab84273952dc80021ae2a388c60d6ea9fc"  # Local test private key
+    websocket_url = "https://ws.staging.kuru.io"
+    private_key = os.getenv("PK")
 
     account = web3.eth.account.from_key(private_key)
 
@@ -64,13 +70,13 @@ async def test_order_executor():
 
     # await asyncio.sleep(2)
 
-    margin_deposit_tx_hash = margin_account.deposit(
-        user=account.address,
-        token=token_address,
-        amount=amount,
-        from_address=account.address
-    )
-    print(f"Margin deposit transaction hash: {margin_deposit_tx_hash}")
+    # margin_deposit_tx_hash = margin_account.deposit(
+    #     user=account.address,
+    #     token=token_address,
+    #     amount=amount,
+    #     from_address=account.address
+    # )
+    # print(f"Margin deposit transaction hash: {margin_deposit_tx_hash}")
 
     await asyncio.sleep(2)
 

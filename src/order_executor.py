@@ -90,7 +90,10 @@ class OrderExecutor:
                  web3: Web3,
                  contract_address: str,
                  websocket_url: str,
-                 private_key: Optional[str] = None):
+                 private_key: Optional[str] = None,
+                 on_order_created: Optional[callable] = None,
+                 on_trade: Optional[callable] = None,
+                 on_order_cancelled: Optional[callable] = None):
         """
         Initialize OrderExecutor with WebSocket connection
         
@@ -114,6 +117,11 @@ class OrderExecutor:
         self.cloid_to_order_id: Dict[str, int] = {}
         self.executed_trades: Dict[int, List[TradeEvent]] = {}
         self.cancelled_orders: Dict[int, str] = {}
+
+        self.on_order_created = on_order_created
+        self.on_trade = on_trade
+        self.on_order_cancelled = on_order_cancelled
+
         
         # Create event queues/channels
         self.order_created_channel = asyncio.Queue()
@@ -142,6 +150,8 @@ class OrderExecutor:
                 self.cloid_to_order_id[cloid] = order_event.orderId
                 
                 await self.order_created_channel.put((cloid, order_event))
+                if self.on_order_created:
+                    await self.on_order_created(order_event)
 
         @self.sio.on('Trade')
         async def on_trade(payload):
@@ -157,7 +167,7 @@ class OrderExecutor:
                 else:
                     self.executed_trades[cloid] = [trade_event]
                 await self.trade_channel.put((cloid, trade_event))
-            
+                await self.on_trade(trade_event)
             if tx_hash in self.tx_to_cloid:
                 cloid = self.tx_to_cloid[tx_hash]
                 print(f"Trade executed for CLOID: {cloid}, TX: {tx_hash}")
@@ -167,6 +177,8 @@ class OrderExecutor:
                 else:
                     self.executed_trades[cloid] = [trade_event]
                 await self.trade_channel.put((cloid, trade_event))
+                if self.on_trade:
+                    await self.on_trade(trade_event)
 
         @self.sio.on('OrderCancelled')
         async def on_order_cancelled(payload):
@@ -177,7 +189,8 @@ class OrderExecutor:
                 print(f"Order cancelled for CLOID: {cloid}, Order ID: {order_id}")
                 self.cancelled_orders[order_id] = cloid
                 await self.order_cancelled_channel.put((cloid, payload))
-                
+                if self.on_order_cancelled:
+                    await self.on_order_cancelled(payload)
                 del self.cloid_to_order_id[order_id]
                 del self.cloid_to_order[cloid]
 

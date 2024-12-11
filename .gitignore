@@ -2,3 +2,4 @@
 .hypothesis/
 .pytest_cache/
 kuru-py-env/
+.env

@@ -11,11 +11,14 @@ import os
 import json
 import argparse
 import asyncio
+from dotenv import load_dotenv
+load_dotenv()
 
 # Network and contract configuration
-NETWORK_RPC = "https://devnet1.monad.xyz/rpc/WbScX50z7Xsvsuk6UB1uMci8Ekee3PJqhBZ2RRx0xSjyqx9hjipbfMh60vr7a1gS"  # Local network
+NETWORK_RPC = os.getenv("RPC_URL")
+print(f"NETWORK_RPC: {NETWORK_RPC}")  
 ADDRESSES = {
-    'orderbook': '0xccc921db74c564cb81c0820a0ed6be174c4baec4',
+    'orderbook': '0x336bd8b100d572cb3b4af481ace50922420e6d1b',
     'usdc': '0x34084eAEbe9Cbc209A85FFe22fa387223CDFB3e8',
     'wbtc': '0xf4f7ca3c361cA2B457Ca6AC9E393B2dad5C6b78b'
 }
@@ -131,7 +134,7 @@ async def main():
     parser = argparse.ArgumentParser(description='Place and manage orders on the orderbook')
     parser.add_argument('action', choices=[
         'limit_buy', 'limit_sell', 'market_buy', 'market_sell',
-        'cancel', 'batch_update'
+        'cancel', 'batch_update', 'get_l2_book'
     ], help='Action to perform')
     
     # Add action-specific arguments
@@ -151,13 +154,18 @@ async def main():
 
     # Initialize Web3 and Orderbook
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
-    private_key = os.getenv('PRIVATE_KEY', "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+    private_key = os.getenv('PK', "")
     
     orderbook = Orderbook(
         web3=web3,
         contract_address=ADDRESSES['orderbook'],
         private_key=private_key
     )
+
+    if args.action == 'get_l2_book':
+        l2_book = await get_l2_book(orderbook)
+        print(l2_book)
+        return
 
     if args.action == 'limit_buy':
         await place_limit_buy(orderbook, args.price, args.size, args.post_only)
@@ -187,6 +195,10 @@ async def main():
             args.order_ids or [],
             args.post_only
         )
+
+async def get_l2_book(orderbook: Orderbook):
+    return await orderbook.fetch_orderbook()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -3,6 +3,7 @@ from typing import Optional, List, Tuple, Dict, Any, NamedTuple
 from dataclasses import dataclass
 from decimal import Decimal
 import json
+from eth_utils import big_endian_to_int
 
 class OrderbookError:
     class NormalizationError(Exception):
@@ -38,6 +39,17 @@ class TxOptions:
     gas_price: Optional[int] = None  # Used as maxFeePerGas
     max_priority_fee_per_gas: Optional[int] = None
     nonce: Optional[int] = None
+
+@dataclass
+class OrderPriceSize:
+    price: float
+    size: float
+
+@dataclass
+class L2Book:
+    block_num: int
+    buy_orders: List[OrderPriceSize]
+    sell_orders: List[OrderPriceSize]
 
 class Orderbook:
     def __init__(
@@ -349,5 +361,156 @@ class Orderbook:
         )
         tx_hash = await self._execute_transaction(tx)
         return tx_hash
-      
+
+    async def get_vault_params(self) -> Dict[str, Any]:
+        """Fetch vault parameters from the contract"""
+        try:
+            # Call the contract function to get vault parameters
+            vault_params = await self.contract.functions.getVaultParams().call()
+
+            return {
+                'kuru_amm_vault': vault_params[0],
+                'vault_best_bid': int(vault_params[1]),
+                'bid_partially_filled_size': int(vault_params[2]),
+                'vault_best_ask': int(vault_params[3]),
+                'ask_partially_filled_size': int(vault_params[4]),
+                'vault_bid_order_size': int(vault_params[5]),
+                'vault_ask_order_size': int(vault_params[6])
+            }
+        except Exception as e:
+            print(f"Error fetching vault parameters: {str(e)}")
+            raise OrderbookError(f"Failed to get vault params: {str(e)}")
+        
+    async def fetch_orderbook(self) -> L2Book:
+        """
+        Fetch the current state of the orderbook including both regular orders and AMM prices.
+        
+        Returns:
+            L2Book: Current state of the orderbook containing buy and sell orders
+        """
+        # Get raw L2 book data from contract
+        l2_book_data = self.contract.functions.getL2Book().call()
+        
+        # Parse raw L2 data into price/size orders
+        buy_orders = []
+        sell_orders = []
+        current_orders = buy_orders
+        
+        # First 32 bytes are block number
+        block_num = int.from_bytes(l2_book_data[:32], 'big')
+        offset = 32
+        
+        while offset + 32 <= len(l2_book_data):
+            price_bytes = l2_book_data[offset:offset + 32]
+            price = int.from_bytes(price_bytes, 'big')
+            
+            # Zero price indicates switch from buy to sell orders
+            if price == 0:
+                current_orders = sell_orders
+                offset += 32
+                continue
+                
+            if offset + 64 > len(l2_book_data):
+                break
+                
+            size_bytes = l2_book_data[offset + 32:offset + 64]
+            size = int.from_bytes(size_bytes, 'big')
+            
+            # Normalize price and size using market parameters
+            price_float = float(price) / float(self.market_params.price_precision)
+            size_float = float(size) / float(self.market_params.size_precision)
+            
+            current_orders.append(OrderPriceSize(
+                price=price_float,
+                size=size_float
+            ))
+            
+            offset += 64
+        
+        # Reverse sell orders to show highest price first
+        sell_orders.reverse()
+        
+        # Get AMM prices
+        amm_prices = await self._get_amm_prices()
+        buy_orders.extend(amm_prices[0])  # Add AMM buy orders
+        sell_orders.extend(amm_prices[1])  # Add AMM sell orders
+        
+        return L2Book(
+            block_num=block_num,
+            buy_orders=buy_orders,
+            sell_orders=sell_orders
+        )
+
+    async def _get_amm_prices(self) -> Tuple[List[OrderPriceSize], List[OrderPriceSize]]:
+        """
+        Get the AMM vault prices for both buy and sell sides.
+        
+        Returns:
+            Tuple[List[OrderPriceSize], List[OrderPriceSize]]: Buy and sell orders from AMM
+        """
+        TOTAL_PRICE_POINTS = 30
+        bids = []
+        asks = []
+        
+        # Get vault parameters
+        vault_params = self.contract.functions.getVaultParams().call()
+        
+        vault_best_bid = vault_params[1]
+        vault_best_ask = vault_params[3]
+        vault_bid_order_size = vault_params[5]
+        vault_ask_order_size = vault_params[6]
+        kuru_amm_vault = vault_params[0]
+        bid_partially_filled_size = vault_params[2]
+        ask_partially_filled_size = vault_params[4]
+        
+        # Convert sizes to float using precision
+        vault_bid_size_float = float(vault_bid_order_size) / float(self.market_params.size_precision)
+        vault_ask_size_float = float(vault_ask_order_size) / float(self.market_params.size_precision)
+        
+        # Calculate first order sizes accounting for partial fills
+        first_bid_size = float(vault_bid_order_size - bid_partially_filled_size) / float(self.market_params.size_precision)
+        first_ask_size = float(vault_ask_order_size - ask_partially_filled_size) / float(self.market_params.size_precision)
+        
+        # Skip if no AMM vault or no bid size
+        if vault_bid_order_size == 0 or kuru_amm_vault == "0x0000000000000000000000000000000000000000":
+            return bids, asks
+            
+        # Generate bid prices
+        for i in range(TOTAL_PRICE_POINTS):
+            if vault_best_bid == 0:
+                break
+                
+            bids.append(OrderPriceSize(
+                price=self._wei_to_eth(vault_best_bid),
+                size=first_bid_size if i == 0 else vault_bid_size_float
+            ))
+            
+            # Update price and size for next level
+            vault_best_bid = (vault_best_bid * 1000) // 1003
+            vault_bid_order_size = (vault_bid_order_size * 2003) // 2000
+            vault_bid_size_float = float(vault_bid_order_size) / float(self.market_params.size_precision)
+        
+        # Generate ask prices
+        for i in range(TOTAL_PRICE_POINTS):
+            if vault_best_ask >= (2**256 - 1):  # Check for uint256 overflow
+                break
+                
+            asks.append(OrderPriceSize(
+                price=self._wei_to_eth(vault_best_ask),
+                size=first_ask_size if i == 0 else vault_ask_size_float
+            ))
+            
+            # Update price and size for next level
+            vault_best_ask = (vault_best_ask * 1003) // 1000
+            vault_ask_order_size = (vault_ask_order_size * 2000) // 2003
+            vault_ask_size_float = float(vault_ask_order_size) / float(self.market_params.size_precision)
+        
+        return bids, asks
+
+    def _wei_to_eth(self, wei_value: int) -> float:
+        """Convert Wei to ETH"""
+        return float(wei_value) / 1e18
+
+
+
 __all__ = ['Orderbook']
