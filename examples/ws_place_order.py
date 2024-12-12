@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Use the same configuration as in orders.py
-# NETWORK_RPC = "https://devnet1.monad.xyz/rpc/WbScX50z7Xsvsuk6UB1uMci8Ekee3PJqhBZ2RRx0xSjyqx9hjipbfMh60vr7a1gS"  # Local network
+
 NETWORK_RPC = os.getenv("RPC_URL")
 ADDRESSES = {
     'orderbook': '0x336bd8b100d572cb3b4af481ace50922420e6d1b',
@@ -68,47 +68,47 @@ async def test_order_executor():
     tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
     print(f"Approve transaction hash: {tx_hash.hex()}")
 
-    # await asyncio.sleep(2)
+    await asyncio.sleep(2)
 
-    # margin_deposit_tx_hash = margin_account.deposit(
-    #     user=account.address,
-    #     token=token_address,
-    #     amount=amount,
-    #     from_address=account.address
-    # )
-    # print(f"Margin deposit transaction hash: {margin_deposit_tx_hash}")
+    margin_deposit_tx_hash = margin_account.deposit(
+        user=account.address,
+        token=token_address,
+        amount=amount,
+        from_address=account.address
+    )
+    print(f"Margin deposit transaction hash: {margin_deposit_tx_hash}")
 
     await asyncio.sleep(2)
 
     # # Deposit wbtc to margin account
-    # token_address = ADDRESSES['wbtc']
-    # token_contract = web3.eth.contract(
-    #     address=Web3.to_checksum_address(token_address),
-    #     abi=ERC20_ABI
-    # )
+    token_address = ADDRESSES['wbtc']
+    token_contract = web3.eth.contract(
+        address=Web3.to_checksum_address(token_address),
+        abi=ERC20_ABI
+    )
 
-    # amount = web3.to_wei(1000, 'ether')  # 1 * 1e18 
+    amount = web3.to_wei(1000, 'ether')  # 1 * 1e18 
 
-    # tx = token_contract.functions.approve(
-    #     margin_account.contract_address,
-    #     amount
-    # ).build_transaction({
-    #     'from': account.address,
-    #     'nonce': web3.eth.get_transaction_count(account.address),
-    # })
+    tx = token_contract.functions.approve(
+        margin_account.contract_address,
+        amount
+    ).build_transaction({
+        'from': account.address,
+        'nonce': web3.eth.get_transaction_count(account.address),
+    })
 
-    # signed_tx = web3.eth.account.sign_transaction(tx, private_key)
-    # tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
-    # print(f"Approve transaction hash: {tx_hash.hex()}")
+    signed_tx = web3.eth.account.sign_transaction(tx, private_key)
+    tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+    print(f"Approve transaction hash: {tx_hash.hex()}")
 
     # await asyncio.sleep(2)
 
-    # margin_account.deposit(
-    #     user=account.address,
-    #     token=token_address,
-    #     amount=amount,
-    #     from_address=account.address
-    # )
+    margin_account.deposit(
+        user=account.address,
+        token=token_address,
+        amount=amount,
+        from_address=account.address
+    )
 
     await asyncio.sleep(2)
 
@@ -145,23 +145,15 @@ async def test_order_executor():
             min_amount_out = str(Decimal(size) * Decimal('0.8')) if order_type == "market" else None
 
             # Create order request
-            # order = OrderRequest(
-            #     order_type=order_type,
-            #     side=side,
-            #     price=price if order_type == "limit" else None,
-            #     size=size,
-            #     post_only=post_only,
-            #     is_margin=is_margin,
-            #     fill_or_kill=fill_or_kill,
-            #     min_amount_out=min_amount_out
-            # )
-
             order = OrderRequest(
-                order_type="limit",
-                side="buy",
-                price="177.4",
-                size="1",
-                post_only=False
+                order_type=order_type,
+                side=side,
+                price=price if order_type == "limit" else None,
+                size=size,
+                post_only=post_only,
+                is_margin=is_margin,
+                fill_or_kill=fill_or_kill,
+                min_amount_out=min_amount_out
             )
 
             # Generate a unique client order ID (CLOID)
