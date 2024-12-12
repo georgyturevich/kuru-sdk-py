@@ -6,7 +6,7 @@ project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
 
 from web3 import Web3
-from src.orderbook import Orderbook, TxOptions
+from kuru_sdk.orderbook import Orderbook, TxOptions
 import os
 import json
 import argparse

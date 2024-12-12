@@ -6,7 +6,7 @@ project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
 
 from web3 import Web3
-from src.margin import MarginAccount
+from kuru_sdk.margin import MarginAccount
 import os
 import json
 import argparse
@@ -35,7 +35,7 @@ def deposit(token_symbol: str, amount: int):
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     
     # Get private key from environment (safer than hardcoding)
-    private_key = os.getenv('PRIVATE_KEY', "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+    private_key = os.getenv('PRIVATE_KEY')
     account = web3.eth.account.from_key(private_key)
     
     # Initialize MarginAccount
@@ -93,7 +93,7 @@ def withdraw(token_symbol: str, amount: int):
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     
     # Get private key from environment (safer than hardcoding)
-    private_key = os.getenv('PRIVATE_KEY', "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+    private_key = os.getenv('PRIVATE_KEY')
     account = web3.eth.account.from_key(private_key)
     
     # Initialize MarginAccount

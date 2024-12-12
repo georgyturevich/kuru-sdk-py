@@ -12,8 +12,8 @@ import asyncio
 import random
 from decimal import Decimal
 from web3 import Web3
-from src.order_executor import OrderExecutor, OrderRequest
-from src.margin import MarginAccount
+from kuru_sdk.order_executor import OrderExecutor, OrderRequest
+from kuru_sdk.margin import MarginAccount
 
 from dotenv import load_dotenv
 

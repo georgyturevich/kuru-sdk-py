@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 import json
 from eth_utils import big_endian_to_int
+import os
 
 class OrderbookError:
     class NormalizationError(Exception):
@@ -71,7 +72,7 @@ class Orderbook:
         self.private_key = private_key
         
         # Load ABI from JSON file
-        with open('abi/orderbook.json', 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__), 'abi/orderbook.json'), 'r') as f:
             contract_abi = json.load(f)
         
         self.contract = self.web3.eth.contract(

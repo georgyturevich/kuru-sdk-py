@@ -3,6 +3,7 @@ from eth_typing import Address
 from typing import Optional, Union, List, Dict, Any
 from web3.contract import Contract
 import json
+import os
 
 class MarginAccount:
     def __init__(
@@ -24,7 +25,7 @@ class MarginAccount:
         self.private_key = private_key
         
         # Load ABI from JSON file
-        with open('abi/marginaccount.json', 'r') as f:
+        with open(os.path.join(os.path.dirname(__file__), 'abi/marginaccount.json'), 'r') as f:
             contract_abi = json.load(f)
         
         self.contract = self.web3.eth.contract(

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.order_executor import OrderExecutor, OrderRequest, TxOptions
+from kuru_sdk.order_executor import OrderExecutor, OrderRequest, TxOptions
 
 class MarketMaker:
     def __init__(

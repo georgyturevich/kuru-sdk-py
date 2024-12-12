@@ -9,8 +9,8 @@ import time
 from decimal import Decimal
 from web3 import Web3
 
-from src.order_executor import OrderExecutor, OrderRequest
-from src.orderbook import TxOptions
+from kuru_sdk.order_executor import OrderExecutor, OrderRequest
+from kuru_sdk.orderbook import TxOptions
 
 import os
 from dotenv import load_dotenv
