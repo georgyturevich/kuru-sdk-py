@@ -160,6 +160,8 @@ tx_options = TxOptions(
 )
 ```
 
+By using `TxOptions` tou can save 1-2 seconds in runtime.
+
 ### Event Handling
 
 The SDK provides real-time order updates through WebSocket events:
