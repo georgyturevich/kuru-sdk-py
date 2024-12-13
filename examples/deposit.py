@@ -11,8 +11,12 @@ import os
 import json
 import argparse
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Network and contract configuration
-NETWORK_RPC = "http://localhost:8545"  # Replace with your network RPC
+NETWORK_RPC = os.getenv("RPC_URL")  # Replace with your network RPC
 ADDRESSES = {
     'margin_account': '0x8A791620dd6260079BF849Dc5567aDC3F2FdC318',
     'usdc': '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
@@ -35,7 +39,7 @@ def deposit(token_symbol: str, amount: int):
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     
     # Get private key from environment (safer than hardcoding)
-    private_key = os.getenv('PRIVATE_KEY')
+    private_key = os.getenv('PK')
     account = web3.eth.account.from_key(private_key)
     
     # Initialize MarginAccount
@@ -77,6 +81,12 @@ def deposit(token_symbol: str, amount: int):
             from_address=account.address
         )
         print(f"Deposit transaction hash: {tx_hash}")
+        
+        balance = margin_account.get_balance(
+            user=account.address,
+            token=token_address
+        )
+        print(f"Margin account balance: {balance}")
         
     except Exception as e:
         print(f"Error occurred: {str(e)}")

@@ -144,5 +144,12 @@ class MarginAccount:
             raise Exception("Private key is required to withdraw tokens from the margin account")
             
         return tx_hash.hex()
+    
+    def get_balance(
+        self,
+        user: str,
+        token: str
+    ) -> int:
+        return self.contract.functions.getBalance(user, token).call()
 
 __all__ = ['MarginAccount']
