@@ -8,6 +8,7 @@ from .orderbook import Orderbook, TxOptions
 
 @dataclass
 class OrderRequest:
+    market_address: str
     order_type: Literal["limit", "market"]
     side: Literal["buy", "sell"]
     price: Optional[str] = None  # Optional for market orders
@@ -213,7 +214,7 @@ class OrderExecutor:
         self.tx_to_cloid[tx_hash] = cloid
         print(f"Stored mapping - CLOID: {cloid}, TX: {tx_hash}")
 
-    async def place_order(self, order: OrderRequest, cloid: str, tx_options: Optional[TxOptions] = TxOptions()) -> str:
+    async def place_order(self, order: OrderRequest, cloid: Optional[str] = None, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
         Place an order with the given parameters
         Returns the transaction hash
@@ -269,6 +270,10 @@ class OrderExecutor:
             print(f"Error placing order: {e}")
             raise
 
+    async def batch_cancel_orders(self, cloids: List[str], tx_options: Optional[TxOptions] = TxOptions()):
+        order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
+        await self.orderbook.batch_cancel_orders(order_ids, tx_options)
+
     def get_tx_hash_by_cloid(self, cloid: str) -> Optional[str]:
         """Get transaction hash for a given CLOID"""
         return self.cloid_to_tx.get(cloid)
@@ -292,11 +297,4 @@ async def listen_for_events(order_executor):
         cloid, cancellation = await order_executor.order_cancelled_channel.get()
         print(f"Received cancellation event for {cloid}: {cancellation}")
 
-# # Usage example:
-# async def main():
-#     # orderbook = Orderbook()
-#     order_executor = OrderExecutor(orderbook)
-    
-#     # Start listening for events in the background
-#     asyncio.create_task(listen_for_events(order_executor))
     
