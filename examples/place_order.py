@@ -1,9 +1,13 @@
 import sys
 from pathlib import Path
 
+
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
+
+from kuru_sdk.client import KuruClient
+from kuru_sdk.order_executor import OrderRequest
 
 from web3 import Web3
 from kuru_sdk.orderbook import Orderbook, TxOptions
@@ -15,30 +19,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Network and contract configuration
-NETWORK_RPC = os.getenv("RPC_URL")
-print(f"NETWORK_RPC: {NETWORK_RPC}")  
+NETWORK_RPC = os.getenv("RPC_URL") 
 ADDRESSES = {
-    'orderbook': '0x336bd8b100d572cb3b4af481ace50922420e6d1b',
-    'usdc': '0x34084eAEbe9Cbc209A85FFe22fa387223CDFB3e8',
-    'wbtc': '0xf4f7ca3c361cA2B457Ca6AC9E393B2dad5C6b78b'
+    'margin_account': '0x33fa695D1B81b88638eEB0a1d69547Ca805b8949',
+    'orderbook': '0x3a4cc34d6cc8b5e8aeb5083575aaa27f2a0a184a',
+    'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
+    'wbtc': '0x0000000000000000000000000000000000000000'
 }
 
-async def place_limit_buy(orderbook: Orderbook, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
+async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
     """Place a limit buy order"""
+
+    print(f"Placing limit buy order: {size} units at {price}")
+
+    order = OrderRequest(
+        market_address=ADDRESSES['orderbook'],
+        order_type='limit',
+        side='buy',
+        price=price,
+        size=size,
+        post_only=post_only
+    )
     try:
         print(f"Placing limit buy order: {size} units at {price}")
-        tx_hash, order_id = await orderbook.add_buy_order(
-            price=price,
-            size=size,
-            post_only=post_only,
-            tx_options=tx_options
-        )
+        tx_hash = await client.create_order(order, "mm_1")
         print(f"Transaction hash: {tx_hash}")
-        print(f"Order ID: {order_id}")
-        return tx_hash, order_id
+        return tx_hash
     except Exception as e:
         print(f"Error placing limit buy order: {str(e)}")
-        return None, None
+        return None
 
 async def place_limit_sell(orderbook: Orderbook, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
     """Place a limit sell order"""
@@ -131,6 +140,7 @@ async def batch_update(
         return None
 
 async def main():
+
     parser = argparse.ArgumentParser(description='Place and manage orders on the orderbook')
     parser.add_argument('action', choices=[
         'limit_buy', 'limit_sell', 'market_buy', 'market_sell',
@@ -155,6 +165,13 @@ async def main():
     # Initialize Web3 and Orderbook
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     private_key = os.getenv('PK', "")
+
+    client = KuruClient(
+        network_rpc=NETWORK_RPC,
+        margin_account_address=ADDRESSES['margin_account'],
+        websocket_url=os.getenv('WS_URL'),
+        private_key=os.getenv('PK')
+    )
     
     orderbook = Orderbook(
         web3=web3,
@@ -168,7 +185,7 @@ async def main():
         return
 
     if args.action == 'limit_buy':
-        await place_limit_buy(orderbook, args.price, args.size, args.post_only)
+        await place_limit_buy(client, args.price, args.size, args.post_only)
     
     elif args.action == 'limit_sell':
         await place_limit_sell(orderbook, args.price, args.size, args.post_only)

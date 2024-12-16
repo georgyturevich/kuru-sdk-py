@@ -57,7 +57,7 @@ class Orderbook:
         self,
         web3: Web3,
         contract_address: str,
-        private_key: Optional[str] = None
+        private_key: str
     ):
         """
         Initialize the Orderbook SDK
@@ -116,13 +116,12 @@ class Orderbook:
     ) -> Dict:
         """Helper method to prepare transaction parameters"""
         func = getattr(self.contract.functions, function_name)(*args)
-        
+
         tx = {
             'to': self.contract_address,
             'value': value,
             'data': func._encode_transaction_data(),
-            'from': self.web3.eth.default_account if not self.private_key else
-                   self.web3.eth.account.from_key(self.private_key).address,
+            'from': self.web3.eth.account.from_key(self.private_key).address,
             'type': '0x2',  # EIP-1559 transaction type
             'chainId': self.web3.eth.chain_id
         }
@@ -180,6 +179,7 @@ class Orderbook:
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
+        print(f"price_normalized: {price_normalized}, size_normalized: {size_normalized}, post_only: {post_only}")
         return await self._prepare_transaction(
             "addBuyOrder",
             [price_normalized, size_normalized, post_only],
@@ -192,8 +192,9 @@ class Orderbook:
         size: str,
         post_only: bool,
         tx_options: TxOptions = TxOptions()
-    ) -> Tuple[str, int]:
+    ) -> str:
         tx = await self.prepare_buy_order(price, size, post_only, tx_options)
+        print(f"tx: {tx}")
         return await self._execute_transaction(tx)
 
     async def prepare_sell_order(
@@ -216,7 +217,7 @@ class Orderbook:
         size: str,
         post_only: bool,
         tx_options: TxOptions = TxOptions()
-    ) -> Tuple[str, int]:
+    ) -> str:
         tx = await self.prepare_sell_order(price, size, post_only, tx_options)
         return await self._execute_transaction(tx)
 

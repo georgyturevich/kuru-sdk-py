@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -17,24 +18,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from kuru_sdk.order_executor import OrderExecutor, OrderRequest, TxOptions
+from kuru_sdk.client import KuruClient
+from kuru_sdk.order_executor import OrderRequest
 
 class MarketMaker:
     def __init__(
         self,
-        web3: Web3,
-        contract_address: str,
-        websocket_url: str,
+        network_rpc: str,
+        margin_account_address: str,
         private_key: str,
+        market_address: str,
         base_size: Decimal = Decimal("1.0"),
         spread_bps: Decimal = Decimal("10"),  # 0.1% spread
     ):
-        self.order_executor = OrderExecutor(
-            web3=web3,
-            contract_address=contract_address,
-            websocket_url=websocket_url,
-            private_key=private_key
+        self.client = KuruClient(
+            network_rpc=network_rpc,
+            margin_account_address=margin_account_address,
+            websocket_url=os.getenv("WS_URL"),
+            private_key=private_key,
+            on_order_created=self.on_order_created,
+            on_trade=self.on_trade,
+            on_order_cancelled=self.on_order_cancelled
         )
+        self.market_address = market_address
         self.base_size = base_size
         self.spread_bps = spread_bps
         self.active_orders = set()
@@ -45,13 +51,25 @@ class MarketMaker:
         self.cloid_counter += 1
         return f"mm_{self.cloid_counter}"
 
+    async def on_order_created(self, event):
+        print(f"Order created: {event}")
+
+    async def on_trade(self, event):
+        print(f"Trade executed: {event}")
+
+    async def on_order_cancelled(self, event):
+        print(f"Order cancelled: {event}")
+
     async def get_binance_price(self) -> Decimal:
         """Fetch current SOL price from Binance"""
         url = "https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
+                # price = 1 + random.uniform(-0.005, 0.005)
+                # return Decimal(price)
                 return Decimal(data["price"])
+            
 
     async def update_orders(self):
         """Update market making orders based on current price"""
@@ -62,12 +80,13 @@ class MarketMaker:
             spread = base_price * (self.spread_bps / Decimal("10000"))
             
             # Calculate bid and ask prices
-            bid_price = str(round((base_price - spread) / 100) * 100)
-            ask_price = str(round((base_price + spread) / 100) * 100)
+            bid_price = str(Decimal(str(round(base_price - spread, 2))))
+            ask_price = str(Decimal(str(round(base_price + spread, 2))))
             size = str(self.base_size)
 
             # Create buy order
             buy_order = OrderRequest(
+                market_address=self.market_address,
                 order_type="limit",
                 side="buy",
                 price=bid_price,
@@ -79,6 +98,7 @@ class MarketMaker:
             
             # Create sell order
             sell_order = OrderRequest(
+                market_address=self.market_address,
                 order_type="limit",
                 side="sell",
                 price=ask_price,
@@ -92,13 +112,8 @@ class MarketMaker:
             buy_cloid = self._generate_cloid()
             sell_cloid = self._generate_cloid()
 
-            tasks = [
-                self.order_executor.place_order(buy_order, buy_cloid),
-                self.order_executor.place_order(sell_order, sell_cloid)
-            ]
-
-            tx_hashes = await asyncio.gather(*tasks)
-            print(f"Placed orders - Buy TX: {tx_hashes[0]}, Sell TX: {tx_hashes[1]}")
+            await self.client.create_order(buy_order, buy_cloid)
+            await self.client.create_order(sell_order, sell_cloid)
             
             # Track new orders
             self.active_orders.add(buy_cloid)
@@ -110,10 +125,6 @@ class MarketMaker:
     async def start(self):
         """Start the market making bot"""
         try:
-            # Connect to WebSocket
-            await self.order_executor.connect()
-            
-            # Start order update loop
             while True:
                 await self.update_orders()
                 await asyncio.sleep(6)  # Update every 6 seconds
@@ -122,29 +133,21 @@ class MarketMaker:
             print("Shutting down market maker...")
         except Exception as e:
             print(f"Error in market maker: {e}")
-        finally:
-            await self.order_executor.disconnect()
 
 
-NETWORK_RPC = os.getenv("RPC_URL")
-ADDRESSES = {
-    'orderbook': '0x336bd8b100d572cb3b4af481ace50922420e6d1b',
-    'usdc': '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-    'wbtc': '0x5FbDB2315678afecb367f032d93F642f64180aa3'
-}
 # Example usage:
 async def main():
-    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
-    contract_address = ADDRESSES['orderbook']
-    websocket_url = 'https://ws.staging.kuru.io'
+    network_rpc = os.getenv("RPC_URL")
+    margin_account_address = "0x33fa695D1B81b88638eEB0a1d69547Ca805b8949"
+    market_address = "0x3a4cc34d6cc8b5e8aeb5083575aaa27f2a0a184a"
     private_key = os.getenv("PK")
 
     market_maker = MarketMaker(
-        web3=web3,
-        contract_address=contract_address,
-        websocket_url=websocket_url,
+        network_rpc=network_rpc,
+        margin_account_address=margin_account_address,
         private_key=private_key,
-        base_size=Decimal("0.1"),  # 1 SOL per order
+        market_address=market_address,
+        base_size=Decimal("0.1"),  # 0.1 SOL per order
         spread_bps=Decimal("100")   # 1% spread
     )
 

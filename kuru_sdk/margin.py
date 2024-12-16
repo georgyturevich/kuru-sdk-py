@@ -36,7 +36,7 @@ class MarginAccount:
         # Native token address constant
         self.NATIVE = "0x0000000000000000000000000000000000000000"
 
-    def deposit(
+    async def deposit(
         self,
         user: str,
         token: str,
@@ -95,10 +95,10 @@ class MarginAccount:
             
         return tx_hash.hex()
 
-    def withdraw(
+    async def withdraw(
         self,
-        amount: int,
         token: str,
+        amount: int,
         from_address: str
     ) -> str:
         """
@@ -145,7 +145,7 @@ class MarginAccount:
             
         return tx_hash.hex()
     
-    def get_balance(
+    async def get_balance(
         self,
         user: str,
         token: str

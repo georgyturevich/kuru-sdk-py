@@ -47,6 +47,14 @@ Here's an example for depositing to the margin account. User needs margin accoun
 Note: The deposit amount is in wei
 
 ```python
+import asyncio
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = str(Path(__file__).parent.parent)
+sys.path.append(project_root)
+
 from web3 import Web3
 from kuru_sdk.margin import MarginAccount
 import os
@@ -57,82 +65,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from kuru_sdk.client import KuruClient
+
 # Network and contract configuration
 NETWORK_RPC = os.getenv("RPC_URL")  # Replace with your network RPC
 ADDRESSES = {
-    'margin_account': '0x8A791620dd6260079BF849Dc5567aDC3F2FdC318',
-    'usdc': '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-    'wbtc': '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+    'margin_account': '0x33fa695D1B81b88638eEB0a1d69547Ca805b8949',
+    'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
+    'wbtc': '0x0000000000000000000000000000000000000000'
 }
 
-# Load ERC20 ABI from JSON file
-with open('abi/ierc20.json', 'r') as f:
-    ERC20_ABI = json.load(f)
-
-def deposit(token_symbol: str, amount: int):
-    """
-    Deposit tokens into the margin account
-    
-    Args:
-        token_symbol: 'usdc' or 'wbtc'
-        amount: Amount to deposit (in wei)
-    """
-    # Initialize Web3
-    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
-    
-    # Get private key from environment (safer than hardcoding)
-    private_key = os.getenv('PK')
-    account = web3.eth.account.from_key(private_key)
-    
-    # Initialize MarginAccount
-    margin_account = MarginAccount(
-        web3=web3,
-        contract_address=ADDRESSES['margin_account'],
-        private_key=private_key
+async def main():
+    client = KuruClient(
+        network_rpc=NETWORK_RPC,
+        margin_account_address=ADDRESSES['margin_account'],
+        private_key=os.getenv('PK')
     )
     
-    # Initialize token contract
-    token_address = ADDRESSES[token_symbol.lower()]
-    token_contract = web3.eth.contract(
-        address=Web3.to_checksum_address(token_address),
-        abi=ERC20_ABI
-    )
-    
-    try:
-        # First approve the margin account to spend tokens
-        print(f"Approving margin account to spend {token_symbol.upper()}...")
-        tx = token_contract.functions.approve(
-            margin_account.contract_address,
-            amount
-        ).build_transaction({
-            'from': account.address,
-            'nonce': web3.eth.get_transaction_count(account.address),
-        })
-        
-        signed_tx = web3.eth.account.sign_transaction(tx, private_key)
-        tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
-        print(f"Approval transaction hash: {receipt.transactionHash.hex()}")
-        
-        # Then deposit to margin account
-        print(f"Depositing {amount} {token_symbol.upper()} to margin account...")
-        tx_hash = margin_account.deposit(
-            user=account.address,
-            token=token_address,
-            amount=amount,
-            from_address=account.address
-        )
-        print(f"Deposit transaction hash: {tx_hash}")
+    # Deposit 100 USDC
+    await client.deposit(ADDRESSES['usdc'], 100000000000000000000000)
 
-        # view margin account balance
-        balance = margin_account.get_balance(
-            user=account.address,
-            token=token_address
-        )
-        print(f"Margin account balance: {balance}")
-        
-    except Exception as e:
-        print(f"Error occurred: {str(e)}")
+    print(await client.view_margin_balance(ADDRESSES['usdc']))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 ```
 
@@ -152,50 +109,28 @@ from kuru_sdk.orderbook import TxOptions
 load_dotenv()
 
 async def place_orders():
-    # Configuration
-    NETWORK_RPC = os.getenv("RPC_URL")
-    CONTRACT_ADDRESS = '0x336bd8b100d572cb3b4af481ace50922420e6d1b'  # orderbook address
-    WEBSOCKET_URL = 'https://ws.staging.kuru.io'
-    PRIVATE_KEY = os.getenv("PK")
-    
-    # Initialize Web3 and OrderExecutor
-    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
-    executor = OrderExecutor(
-        web3=web3,
-        contract_address=CONTRACT_ADDRESS,
-        websocket_url=WEBSOCKET_URL,
-        private_key=PRIVATE_KEY
+async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
+    """Place a limit buy order"""
+
+    print(f"Placing limit buy order: {size} units at {price}")
+
+    order = OrderRequest(
+        market_address=ADDRESSES['orderbook'],
+        order_type='limit',
+        side='buy',
+        price=price,
+        size=size,
+        post_only=post_only
     )
-
     try:
-        # Connect to WebSocket
-        await executor.connect()
-
-        # Create a basic limit order
-        order = OrderRequest(
-            order_type="limit",
-            side="buy",
-            price="179.1",
-            size="0.1",
-            post_only=False
-        )
-
-        # Place order without TX options
-        tx_hash = await executor.place_order(order, "order_1")
-        event = await executor.order_created_channel.get()
-        print(f"Order created with hash: {tx_hash}")
-
-        # Place order with custom gas settings
-        tx_options = TxOptions(
-            gas_limit=140000,
-            gas_price=1000000000,  # 1 gwei
-            max_priority_fee_per_gas=0
-        )
-        tx_hash = await executor.place_order(order, "order_2", tx_options)
-        event = await executor.order_created_channel.get()
-        
-    finally:
-        await executor.disconnect()
+        cloid = "mm_1
+        print(f"Placing limit buy order: {size} units at {price}")
+        tx_hash = await client.create_order(order, cloid)
+        print(f"Transaction hash: {tx_hash}")
+        return tx_hash
+    except Exception as e:
+        print(f"Error placing limit buy order: {str(e)}")
+        return None
 
 if __name__ == "__main__":
     asyncio.run(place_orders())
@@ -284,13 +219,13 @@ async def on_trade(event):
 async def on_order_cancelled(event):
     print(f"Order {event.orderId} cancelled")
 
-executor = OrderExecutor(
-    web3=web3,
-    contract_address=CONTRACT_ADDRESS,
-    websocket_url=WEBSOCKET_URL,
-    private_key=PRIVATE_KEY,
-    on_order_created=on_order_created,
-    on_trade=on_trade,
+client = KuruClient(
+    network_rpc='RPC_URL',
+    margin_account_address='MARGIN_ACCOUNT_ADDRESS',
+    websocket_url='WS_URL',
+    private_key='PRIVATE_KEY'
+    on_order_created=on_order_created
+    on_trade=on_trade
     on_order_cancelled=on_order_cancelled
 )
 ```
@@ -298,14 +233,10 @@ executor = OrderExecutor(
 ### WebSocket Connection Management
 
 The SDK handles WebSocket connections automatically, but you need to properly connect and disconnect:
+The client automatically connects to ws. But it has to be manually disabled
 
 ```python
-# Connect to WebSocket
-await executor.connect()
-
-# Place orders and handle events...
-
 # Always disconnect when done
-await executor.disconnect()
+await client.disconnect()
 ```
 

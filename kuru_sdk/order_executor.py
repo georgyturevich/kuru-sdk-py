@@ -91,7 +91,7 @@ class OrderExecutor:
                  web3: Web3,
                  contract_address: str,
                  websocket_url: str,
-                 private_key: Optional[str] = None,
+                 private_key: str,
                  on_order_created: Optional[callable] = None,
                  on_trade: Optional[callable] = None,
                  on_order_cancelled: Optional[callable] = None):
@@ -220,6 +220,8 @@ class OrderExecutor:
         Returns the transaction hash
         """
 
+        print(f"Orderbook address: {self.orderbook.contract_address}")
+
         try:
             tx_hash = None
             if order.order_type == "limit":
@@ -227,12 +229,14 @@ class OrderExecutor:
                     raise ValueError("Price is required for limit orders")
                 
                 if order.side == "buy":
+                    print(f"Adding buy order with price: {order.price}, size: {order.size}, post_only: {order.post_only}, tx_options: {tx_options}")
                     tx_hash = await self.orderbook.add_buy_order(
                         price=order.price,
                         size=order.size,
                         post_only=order.post_only,
                         tx_options=tx_options
                     )
+                    print(f"tx_hash: {tx_hash}")
                 else:  # sell
                     tx_hash = await self.orderbook.add_sell_order(
                         price=order.price,
@@ -261,6 +265,7 @@ class OrderExecutor:
                         tx_options=tx_options
                     )
             tx_hash = f"0x{tx_hash}".lower()
+            print(f"tx_hash: {tx_hash}")
             if tx_hash and cloid:
                 self._store_order_mapping(cloid, tx_hash)
             
