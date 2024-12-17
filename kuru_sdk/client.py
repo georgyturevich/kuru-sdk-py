@@ -82,7 +82,8 @@ class KuruClient:
 
     print(f"Deposit transaction hash: {deposit_tx}")
 
-  async def create_order(self, order_request: OrderRequest, cloid: str, tx_options: Optional[TxOptions] = TxOptions()):
+  async def create_order(self, order_request: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()):
+    cloid = order_request.cloid
     market_address = order_request.market_address
     print(f"Creating order for market: {market_address}")
     if market_address not in self.order_executors:
@@ -99,7 +100,7 @@ class KuruClient:
 
     order_executor = self.order_executors[market_address]
     print(f"order_executor: {order_executor}")
-    tx_hash = await order_executor.place_order(order_request, cloid, tx_options)
+    tx_hash = await order_executor.place_order(order_request, tx_options)
     print(f"tx_hash: {tx_hash}")
     print(f"Order placed successfully with transaction hash: {tx_hash}")
     self.cloid_to_market_address[cloid] = market_address

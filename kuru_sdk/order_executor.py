@@ -8,6 +8,7 @@ from .orderbook import Orderbook, TxOptions
 
 @dataclass
 class OrderRequest:
+    cloid: Optional[str] = None
     market_address: str
     order_type: Literal["limit", "market"]
     side: Literal["buy", "sell"]
@@ -214,11 +215,13 @@ class OrderExecutor:
         self.tx_to_cloid[tx_hash] = cloid
         print(f"Stored mapping - CLOID: {cloid}, TX: {tx_hash}")
 
-    async def place_order(self, order: OrderRequest, cloid: Optional[str] = None, tx_options: Optional[TxOptions] = TxOptions()) -> str:
+    async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
         Place an order with the given parameters
         Returns the transaction hash
         """
+
+        cloid = order.cloid
 
         print(f"Orderbook address: {self.orderbook.contract_address}")
 

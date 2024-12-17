@@ -115,6 +115,7 @@ async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: 
     print(f"Placing limit buy order: {size} units at {price}")
 
     order = OrderRequest(
+        cloid = "mm_1"
         market_address=ADDRESSES['orderbook'],
         order_type='limit',
         side='buy',
@@ -123,9 +124,8 @@ async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: 
         post_only=post_only
     )
     try:
-        cloid = "mm_1
         print(f"Placing limit buy order: {size} units at {price}")
-        tx_hash = await client.create_order(order, cloid)
+        tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
