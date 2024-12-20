@@ -38,73 +38,84 @@ async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: 
         side='buy',
         price=price,
         size=size,
-        post_only=post_only
+        post_only=post_only,
+        cloid="mm_1"
     )
     try:
         print(f"Placing limit buy order: {size} units at {price}")
-        tx_hash = await client.create_order(order, "mm_1")
+        tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
         print(f"Error placing limit buy order: {str(e)}")
         return None
 
-async def place_limit_sell(orderbook: Orderbook, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
+async def place_limit_sell(client: KuruClient, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
     """Place a limit sell order"""
+
+    order = OrderRequest(
+        market_address=ADDRESSES['orderbook'],
+        order_type='limit',
+        side='sell',
+        price=price,
+        size=size,
+        post_only=post_only,
+        cloid="mm_2"
+    )
     try:
         print(f"Placing limit sell order: {size} units at {price}")
-        tx_hash, order_id = await orderbook.add_sell_order(
-            price=price,
-            size=size,
-            post_only=post_only,
-            tx_options=tx_options
-        )
+        tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
-        print(f"Order ID: {order_id}")
-        return tx_hash, order_id
+        return tx_hash
     except Exception as e:
         print(f"Error placing limit sell order: {str(e)}")
         return None, None
 
-async def place_market_buy(orderbook: Orderbook, size: str, min_amount_out: str = "0", tx_options: TxOptions = TxOptions()):
+async def place_market_buy(client: KuruClient, size: str, min_amount_out: str = "0", tx_options: TxOptions = TxOptions()):
     """Place a market buy order"""
+
+    order = OrderRequest(
+        market_address=ADDRESSES['orderbook'],
+        order_type='market',
+        side='buy',
+        size=size,
+        min_amount_out=min_amount_out,
+        cloid="mm_3"
+    )
     try:
         print(f"Placing market buy order: {size} units")
-        tx_hash = await orderbook.market_buy(
-            size=size,
-            min_amount_out=min_amount_out,
-            is_margin=True,
-            fill_or_kill=False,
-            tx_options=tx_options
-        )
+        tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
         print(f"Error placing market buy order: {str(e)}")
         return None
 
-async def place_market_sell(orderbook: Orderbook, size: str, min_amount_out: str = "0", tx_options: TxOptions = TxOptions()):
+async def place_market_sell(client: KuruClient, size: str, min_amount_out: str = "0", tx_options: TxOptions = TxOptions()):
     """Place a market sell order"""
+
+    order = OrderRequest(
+        market_address=ADDRESSES['orderbook'],
+        order_type='market',
+        side='sell',
+        size=size,
+        min_amount_out=min_amount_out,
+        cloid="mm_4"
+    )
     try:
         print(f"Placing market sell order: {size} units")
-        tx_hash = await orderbook.market_sell(
-            size=size,
-            min_amount_out=min_amount_out,
-            is_margin=True,
-            fill_or_kill=False,
-            tx_options=tx_options
-        )
+        tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
         print(f"Error placing market sell order: {str(e)}")
         return None
 
-async def cancel_orders(orderbook: Orderbook, order_ids: list, tx_options: TxOptions = TxOptions()):
+async def cancel_orders(client: KuruClient, order_ids: list, tx_options: TxOptions = TxOptions()):
     """Cancel multiple orders"""
     try:
         print(f"Cancelling orders: {order_ids}")
-        tx_hash = await orderbook.batch_cancel_orders(order_ids, tx_options)
+        tx_hash = await client.batch_cancel_orders(order_ids, tx_options)
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
@@ -112,7 +123,7 @@ async def cancel_orders(orderbook: Orderbook, order_ids: list, tx_options: TxOpt
         return None
 
 async def batch_update(
-    orderbook: Orderbook,
+    client: KuruClient,
     buy_prices: list,
     buy_sizes: list,
     sell_prices: list,
@@ -124,7 +135,7 @@ async def batch_update(
     """Perform a batch update of orders"""
     try:
         print("Performing batch order update...")
-        tx_hash = await orderbook.batch_orders(
+        tx_hash = await client.batch_orders(
             buy_prices=buy_prices,
             buy_sizes=buy_sizes,
             sell_prices=sell_prices,

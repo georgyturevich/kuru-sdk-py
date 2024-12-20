@@ -8,7 +8,6 @@ from .orderbook import Orderbook, TxOptions
 
 @dataclass
 class OrderRequest:
-    cloid: Optional[str] = None
     market_address: str
     order_type: Literal["limit", "market"]
     side: Literal["buy", "sell"]
@@ -18,6 +17,7 @@ class OrderRequest:
     is_margin: bool = False
     fill_or_kill: bool = False
     min_amount_out: Optional[str] = None  # For market orders
+    cloid: Optional[str] = None
 
 @dataclass
 class OrderCreatedEvent:
@@ -107,7 +107,7 @@ class OrderExecutor:
         """
         self.orderbook = Orderbook(web3, contract_address, private_key)
         self.websocket_url = f"{websocket_url}?marketAddress={contract_address.lower()}"
-        print(f"websocket_url: {self.websocket_url}")
+
         
         # Initialize socket.io client
         self.sio = socketio.AsyncClient()
@@ -141,7 +141,6 @@ class OrderExecutor:
 
         @self.sio.on('OrderCreated')
         async def on_order_created(payload):
-            print(f"on_order_created: {payload}")
             tx_hash = payload.get('transactionHash')
             print(f"tx_hash in self.tx_to_cloid: {tx_hash in self.tx_to_cloid}")
             if tx_hash in self.tx_to_cloid:
@@ -223,8 +222,6 @@ class OrderExecutor:
 
         cloid = order.cloid
 
-        print(f"Orderbook address: {self.orderbook.contract_address}")
-
         try:
             tx_hash = None
             if order.order_type == "limit":
@@ -239,7 +236,6 @@ class OrderExecutor:
                         post_only=order.post_only,
                         tx_options=tx_options
                     )
-                    print(f"tx_hash: {tx_hash}")
                 else:  # sell
                     tx_hash = await self.orderbook.add_sell_order(
                         price=order.price,
@@ -268,7 +264,6 @@ class OrderExecutor:
                         tx_options=tx_options
                     )
             tx_hash = f"0x{tx_hash}".lower()
-            print(f"tx_hash: {tx_hash}")
             if tx_hash and cloid:
                 self._store_order_mapping(cloid, tx_hash)
             
@@ -277,10 +272,19 @@ class OrderExecutor:
         except Exception as e:
             print(f"Error placing order: {e}")
             raise
+    
 
+    async def batch_orders(self, order_requests: List[OrderRequest], tx_options: Optional[TxOptions] = TxOptions()):
+        tx_hash = await self.orderbook.batch_orders(order_requests, tx_options)
+        if tx_hash and tx_options.cloid:
+            self._store_order_mapping(tx_options.cloid, tx_hash)
+        
+        return tx_hash
+    
     async def batch_cancel_orders(self, cloids: List[str], tx_options: Optional[TxOptions] = TxOptions()):
         order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
-        await self.orderbook.batch_cancel_orders(order_ids, tx_options)
+        tx_hash = await self.orderbook.batch_cancel_orders(order_ids, tx_options)
+        return tx_hash
 
     def get_tx_hash_by_cloid(self, cloid: str) -> Optional[str]:
         """Get transaction hash for a given CLOID"""

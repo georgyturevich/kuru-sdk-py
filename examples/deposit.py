@@ -25,11 +25,13 @@ ADDRESSES = {
     'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
     'wbtc': '0x0000000000000000000000000000000000000000'
 }
+WS_URL = "https://ws.staging.kuru.io"
 
 async def main():
     client = KuruClient(
         network_rpc=NETWORK_RPC,
         margin_account_address=ADDRESSES['margin_account'],
+        websocket_url=WS_URL,
         private_key=os.getenv('PK')
     )
     

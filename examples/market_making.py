@@ -84,6 +84,10 @@ class MarketMaker:
             ask_price = str(Decimal(str(round(base_price + spread, 2))))
             size = str(self.base_size)
 
+             # Place orders
+            buy_cloid = self._generate_cloid()
+            sell_cloid = self._generate_cloid()
+
             # Create buy order
             buy_order = OrderRequest(
                 market_address=self.market_address,
@@ -91,7 +95,8 @@ class MarketMaker:
                 side="buy",
                 price=bid_price,
                 size=size,
-                post_only=False
+                post_only=False,
+                cloid=buy_cloid
             )
 
             print(f"buy_order: {buy_order}")
@@ -103,17 +108,14 @@ class MarketMaker:
                 side="sell",
                 price=ask_price,
                 size=size,
-                post_only=False
+                post_only=False,
+                cloid=sell_cloid
             )
 
             print(f"sell_order: {sell_order}")
 
-            # Place orders
-            buy_cloid = self._generate_cloid()
-            sell_cloid = self._generate_cloid()
-
-            await self.client.create_order(buy_order, buy_cloid)
-            await self.client.create_order(sell_order, sell_cloid)
+            await self.client.create_order(buy_order)
+            await self.client.create_order(sell_order)
             
             # Track new orders
             self.active_orders.add(buy_cloid)

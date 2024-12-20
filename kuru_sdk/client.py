@@ -20,7 +20,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # Load ERC20 ABI from JSON file
 abi_path = Path(__file__).parent / 'abi' / 'ierc20.json'
 with open(abi_path, 'r') as f:
@@ -59,10 +58,8 @@ class KuruClient:
         address=Web3.to_checksum_address(token_address),
         abi=self.erc20_abi
     )
-    print(f"token_contract: {token_contract}")
     if token_address != self.NATIVE_TOKEN_ADDRESS:
       allowance = token_contract.functions.allowance(self.user_address, self.margin_account.contract_address).call()
-      print(f"allowance: {allowance}")
       if allowance < amount:
         allowance_tx = token_contract.functions.approve(self.margin_account.contract_address, amount).build_transaction({
           'from': self.user_address,
@@ -99,27 +96,28 @@ class KuruClient:
       await self.order_executors[market_address].connect()
 
     order_executor = self.order_executors[market_address]
-    print(f"order_executor: {order_executor}")
     tx_hash = await order_executor.place_order(order_request, tx_options)
-    print(f"tx_hash: {tx_hash}")
     print(f"Order placed successfully with transaction hash: {tx_hash}")
     self.cloid_to_market_address[cloid] = market_address
- 
 
-  async def cancel_order(self, cloid: str):
+    return tx_hash
+  
+  async def cancel_order(self, cloid: str, tx_options: Optional[TxOptions] = TxOptions()):
     market_address = self.cloid_to_market_address[cloid]
-    await self.order_executors[market_address].batch_cancel_orders([cloid])
+    tx_hash = await self.order_executors[market_address].batch_cancel_orders([cloid], tx_options)
+    print(f"Cancelled order with tx hash: {tx_hash}")
+    return tx_hash
 
-  def batch_cancel_orders(self, market_address: str, cloids: List[str]):
-    self.order_executors[market_address].batch_cancel_orders(cloids)
+  def batch_cancel_orders(self, market_address: str, cloids: List[str], tx_options: Optional[TxOptions] = TxOptions()):
+    tx_hash = self.order_executors[market_address].batch_cancel_orders(cloids, tx_options)
+    print(f"Cancelled orders with tx hash: {tx_hash}")
+    return tx_hash
 
   def withdraw(self, token_address: str, amount: int):
     withdraw_tx = self.margin_account.withdraw(token_address, amount, self.user_address)
     print(f"Withdraw transaction hash: {withdraw_tx}")
 
   async def view_margin_balance(self, token_address):
-    print(f"token_address: {token_address}")
-    print(f"user_address: {self.user_address}")
     return await self.margin_account.get_balance(
       self.user_address,
       token_address

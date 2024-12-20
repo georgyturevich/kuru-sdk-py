@@ -1,3 +1,4 @@
+from math import ceil, floor, log10
 from web3 import Web3
 from typing import Optional, List, Tuple, Dict, Any, NamedTuple
 from dataclasses import dataclass
@@ -128,7 +129,7 @@ class Orderbook:
 
         # Get base fee from latest block
         base_fee = self.web3.eth.get_block('latest')['baseFeePerGas']
-        
+
         # Set maxPriorityFeePerGas (tip) and maxFeePerGas
         if tx_options.gas_price is not None:
             tx['maxFeePerGas'] = tx_options.gas_price
@@ -153,7 +154,6 @@ class Orderbook:
             tx['nonce'] = tx_options.nonce
         else:
             tx['nonce'] = self.web3.eth.get_transaction_count(tx['from'])
-
         return tx
 
     async def _execute_transaction(self, tx: Dict) -> Tuple[str, Optional[int]]:
@@ -179,7 +179,6 @@ class Orderbook:
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
-        print(f"price_normalized: {price_normalized}, size_normalized: {size_normalized}, post_only: {post_only}")
         return await self._prepare_transaction(
             "addBuyOrder",
             [price_normalized, size_normalized, post_only],
@@ -194,7 +193,6 @@ class Orderbook:
         tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_buy_order(price, size, post_only, tx_options)
-        print(f"tx: {tx}")
         return await self._execute_transaction(tx)
 
     async def prepare_sell_order(
@@ -304,7 +302,6 @@ class Orderbook:
             tx_options
         )
         tx_hash = await self._execute_transaction(tx)
-        print(f"Market sell transaction hash: {tx_hash}")
         return tx_hash
 
     async def prepare_batch_orders(
@@ -434,8 +431,14 @@ class Orderbook:
         
         # Get AMM prices
         amm_prices = await self._get_amm_prices()
+        total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)
         buy_orders.extend(amm_prices[0])  # Add AMM buy orders
         sell_orders.extend(amm_prices[1])  # Add AMM sell orders
+
+        # round buy_orders down to total_decimals
+        # round sell_orders up to total_decimals
+        buy_orders = [OrderPriceSize(price=floor(order.price * 10**total_decimals) / 10**total_decimals, size=order.size) for order in buy_orders]
+        sell_orders = [OrderPriceSize(price=ceil(order.price * 10**total_decimals) / 10**total_decimals, size=order.size) for order in sell_orders]
         
         return L2Book(
             block_num=block_num,
