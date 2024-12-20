@@ -135,9 +135,7 @@ class OrderExecutor:
 
 
     async def _handle_order_created(self, payload):
-        print(f"Handling order created event: {payload}")
         tx_hash = payload.get('transactionHash')
-        print(f"tx_hash in self.tx_to_cloid: {tx_hash in self.tx_to_cloid}")
         if tx_hash in self.tx_to_cloid:
             cloid = self.tx_to_cloid[tx_hash]
             print(f"Order created for CLOID: {cloid}, TX: {tx_hash}")
@@ -148,7 +146,6 @@ class OrderExecutor:
                 await self.on_order_created(order_event)
 
     async def _handle_trade(self, payload):
-        print(f"on_trade: {payload}")
         order_id = payload.get('orderId')
         tx_hash = payload.get('transactionHash')
         if order_id in self.cloid_to_order_id:
@@ -174,7 +171,6 @@ class OrderExecutor:
                 await self.on_trade(trade_event)
 
     async def _handle_order_cancelled(self, payload):
-        print(f"on_order_cancelled: {payload}")
         order_id = payload.get('orderId')
         if order_id in self.cloid_to_order_id:
             cloid = self.cloid_to_order_id[order_id]
