@@ -4,6 +4,8 @@ import asyncio
 import socketio
 
 from web3 import Web3
+
+from kuru_sdk.websocket_handler import WebSocketHandler
 from .orderbook import Orderbook, TxOptions
 
 @dataclass
@@ -124,90 +126,73 @@ class OrderExecutor:
         self.on_trade = on_trade
         self.on_order_cancelled = on_order_cancelled
 
-        
-        # Create event queues/channels
-        self.order_created_channel = asyncio.Queue()
-        self.trade_channel = asyncio.Queue()
-        self.order_cancelled_channel = asyncio.Queue()
+        self.ws_handler = WebSocketHandler(
+            websocket_url=self.websocket_url,
+            on_order_created=self._handle_order_created,
+            on_trade=self._handle_trade,
+            on_order_cancelled=self._handle_order_cancelled
+        )
 
-        # Register socket.io event handlers
-        @self.sio.on('connect')
-        async def on_connect():
-            print(f"Connected to WebSocket server at {websocket_url}")
 
-        @self.sio.on('disconnect')
-        async def on_disconnect():
-            print("Disconnected from WebSocket server")
+    async def _handle_order_created(self, payload):
+        print(f"Handling order created event: {payload}")
+        tx_hash = payload.get('transactionHash')
+        print(f"tx_hash in self.tx_to_cloid: {tx_hash in self.tx_to_cloid}")
+        if tx_hash in self.tx_to_cloid:
+            cloid = self.tx_to_cloid[tx_hash]
+            print(f"Order created for CLOID: {cloid}, TX: {tx_hash}")
+            order_event = OrderCreatedEvent.from_dict(payload)
+            self.cloid_to_order[cloid] = order_event
+            self.cloid_to_order_id[cloid] = order_event.orderId
+            if self.on_order_created:
+                await self.on_order_created(order_event)
 
-        @self.sio.on('OrderCreated')
-        async def on_order_created(payload):
-            tx_hash = payload.get('transactionHash')
-            print(f"tx_hash in self.tx_to_cloid: {tx_hash in self.tx_to_cloid}")
-            if tx_hash in self.tx_to_cloid:
-                cloid = self.tx_to_cloid[tx_hash]
-                print(f"Order created for CLOID: {cloid}, TX: {tx_hash}")
-                order_event = OrderCreatedEvent.from_dict(payload)
-                self.cloid_to_order[cloid] = order_event
-                self.cloid_to_order_id[cloid] = order_event.orderId
-                
-                await self.order_created_channel.put((cloid, order_event))
-                if self.on_order_created:
-                    await self.on_order_created(order_event)
-
-        @self.sio.on('Trade')
-        async def on_trade(payload):
-            print(f"on_trade: {payload}")
-            order_id = payload.get('orderId')
-            tx_hash = payload.get('transactionHash')
-            if order_id in self.cloid_to_order_id:
-                cloid = self.cloid_to_order_id[order_id]
-                print(f"Trade executed for CLOID: {cloid}, Order ID: {order_id}")
-                trade_event = TradeEvent.from_dict(payload)
-                if self.executed_trades.get(cloid):
-                    self.executed_trades[cloid].append(trade_event)
-                else:
-                    self.executed_trades[cloid] = [trade_event]
-                await self.trade_channel.put((cloid, trade_event))
+    async def _handle_trade(self, payload):
+        print(f"on_trade: {payload}")
+        order_id = payload.get('orderId')
+        tx_hash = payload.get('transactionHash')
+        if order_id in self.cloid_to_order_id:
+            cloid = self.cloid_to_order_id[order_id]
+            print(f"Trade executed for CLOID: {cloid}, Order ID: {order_id}")
+            trade_event = TradeEvent.from_dict(payload)
+            if self.executed_trades.get(cloid):
+                self.executed_trades[cloid].append(trade_event)
+            else:
+                self.executed_trades[cloid] = [trade_event]
+            if self.on_trade:
                 await self.on_trade(trade_event)
-            if tx_hash in self.tx_to_cloid:
-                cloid = self.tx_to_cloid[tx_hash]
-                print(f"Trade executed for CLOID: {cloid}, TX: {tx_hash}")
-                trade_event = TradeEvent.from_dict(payload)
-                if self.executed_trades.get(cloid):
-                    self.executed_trades[cloid].append(trade_event)
-                else:
-                    self.executed_trades[cloid] = [trade_event]
-                await self.trade_channel.put((cloid, trade_event))
-                if self.on_trade:
-                    await self.on_trade(trade_event)
 
-        @self.sio.on('OrderCancelled')
-        async def on_order_cancelled(payload):
-            print(f"on_order_cancelled: {payload}")
-            order_id = payload.get('orderId')
-            if order_id in self.cloid_to_order_id:
-                cloid = self.cloid_to_order_id[order_id]
-                print(f"Order cancelled for CLOID: {cloid}, Order ID: {order_id}")
-                self.cancelled_orders[order_id] = cloid
-                await self.order_cancelled_channel.put((cloid, payload))
-                if self.on_order_cancelled:
-                    await self.on_order_cancelled(payload)
-                del self.cloid_to_order_id[order_id]
-                del self.cloid_to_order[cloid]
+        if tx_hash in self.tx_to_cloid:
+            cloid = self.tx_to_cloid[tx_hash]
+            print(f"Trade executed for CLOID: {cloid}, TX: {tx_hash}")
+            trade_event = TradeEvent.from_dict(payload)
+            if self.executed_trades.get(cloid):
+                self.executed_trades[cloid].append(trade_event)
+            else:
+                self.executed_trades[cloid] = [trade_event]
+            if self.on_trade:
+                await self.on_trade(trade_event)
 
+    async def _handle_order_cancelled(self, payload):
+        print(f"on_order_cancelled: {payload}")
+        order_id = payload.get('orderId')
+        if order_id in self.cloid_to_order_id:
+            cloid = self.cloid_to_order_id[order_id]
+            print(f"Order cancelled for CLOID: {cloid}, Order ID: {order_id}")
+            self.cancelled_orders[order_id] = cloid
+            if self.on_order_cancelled:
+                await self.on_order_cancelled(payload)
+            del self.cloid_to_order_id[order_id]
+            del self.cloid_to_order[cloid]
+                
     async def connect(self):
         """Connect to the WebSocket server"""
-        try:
-            await self.sio.connect(self.websocket_url)
-            print(f"Successfully connected to {self.websocket_url}")
-        except Exception as e:
-            print(f"Failed to connect to WebSocket server: {e}")
-            raise
+        print(f"Connecting to WebSocket server: {self.websocket_url}")
+        await self.ws_handler.connect()
 
     async def disconnect(self):
         """Disconnect from the WebSocket server"""
-        await self.sio.disconnect()
-        print("Disconnected from WebSocket server")
+        await self.ws_handler.disconnect()
 
     def _store_order_mapping(self, cloid: str, tx_hash: str):
         self.cloid_to_tx[cloid] = tx_hash

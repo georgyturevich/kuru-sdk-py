@@ -94,6 +94,7 @@ class KuruClient:
         self.on_order_cancelled
       )
       await self.order_executors[market_address].connect()
+      print(f"Connected to order executor for market: {market_address}")
 
     order_executor = self.order_executors[market_address]
     tx_hash = await order_executor.place_order(order_request, tx_options)

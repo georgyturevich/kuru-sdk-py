@@ -515,6 +515,12 @@ class Orderbook:
     def _wei_to_eth(self, wei_value: int) -> float:
         """Convert Wei to ETH"""
         return float(wei_value) / 1e18
+    
+    def reconcile_orderbook(self, orderbook: L2Book, payload: Dict) -> L2Book:
+        """Reconcile the orderbook to ensure it is consistent with the AMM prices"""
+
+        
+        return orderbook
 
 
 
