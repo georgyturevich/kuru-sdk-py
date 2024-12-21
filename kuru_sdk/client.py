@@ -103,6 +103,30 @@ class KuruClient:
 
     return tx_hash
   
+  async def batch_orders(
+      self,
+      order_requests: List[OrderRequest],
+      tx_options: Optional[TxOptions]
+  ):
+    market_address = order_requests[0].market_address
+    if market_address not in self.order_executors:
+      self.order_executors[market_address] = OrderExecutor(
+        self.web3, 
+        market_address, 
+        self.websocket_url,
+        self.private_key, 
+        self.on_order_created, 
+        self.on_trade, 
+        self.on_order_cancelled
+      )
+      await self.order_executors[market_address].connect()
+      print(f"Connected to order executor for market: {market_address}")
+
+    order_executor = self.order_executors[market_address]
+    tx_hash = await order_executor.batch_orders(order_requests, tx_options)
+    print(f"Batch orders placed successfully with transaction hash: {tx_hash}")
+    return tx_hash
+  
   async def cancel_order(self, cloid: str, tx_options: Optional[TxOptions] = TxOptions()):
     market_address = self.cloid_to_market_address[cloid]
     tx_hash = await self.order_executors[market_address].batch_cancel_orders([cloid], tx_options)

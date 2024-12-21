@@ -256,7 +256,43 @@ class OrderExecutor:
     
 
     async def batch_orders(self, order_requests: List[OrderRequest], tx_options: Optional[TxOptions] = TxOptions()):
-        tx_hash = await self.orderbook.batch_orders(order_requests, tx_options)
+        buy_prices = []
+        buy_sizes = []
+        sell_prices = []
+        sell_sizes = []
+        order_ids_to_cancel = []
+        post_only = False  # Will be set to True if any order is post_only
+
+        # Sort orders into buy and sell lists
+        for order in order_requests:
+            if order.order_type != "limit":
+                raise ValueError("Batch orders only support limit orders")
+            
+            if not order.price:
+                raise ValueError("Price is required for limit orders")
+
+            if order.side == "buy":
+                buy_prices.append(order.price)
+                buy_sizes.append(order.size)
+            else:  # sell
+                sell_prices.append(order.price)
+                sell_sizes.append(order.size)
+            
+            post_only = post_only or order.post_only
+
+        # Execute batch order
+        tx_hash = await self.orderbook.batch_orders(
+            buy_prices=buy_prices,
+            buy_sizes=buy_sizes,
+            sell_prices=sell_prices,
+            sell_sizes=sell_sizes,
+            order_ids_to_cancel=order_ids_to_cancel,
+            post_only=post_only,
+            tx_options=tx_options
+        )
+
+        # Store order mappings if cloid is provided
+        tx_hash = f"0x{tx_hash}".lower()
         if tx_hash and tx_options.cloid:
             self._store_order_mapping(tx_options.cloid, tx_hash)
         

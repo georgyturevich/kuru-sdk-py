@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 
 # Add project root to Python path
@@ -124,25 +125,15 @@ async def cancel_orders(client: KuruClient, order_ids: list, tx_options: TxOptio
 
 async def batch_update(
     client: KuruClient,
-    buy_prices: list,
-    buy_sizes: list,
-    sell_prices: list,
-    sell_sizes: list,
-    cancel_ids: list,
-    post_only: bool = False,
-    tx_options: TxOptions = TxOptions()
+    order_requests: List[OrderRequest],
+    tx_options: Optional[TxOptions] = None
 ):
     """Perform a batch update of orders"""
     try:
         print("Performing batch order update...")
         tx_hash = await client.batch_orders(
-            buy_prices=buy_prices,
-            buy_sizes=buy_sizes,
-            sell_prices=sell_prices,
-            sell_sizes=sell_sizes,
-            order_ids_to_cancel=cancel_ids,
-            post_only=post_only,
-            tx_options=tx_options
+            order_requests,
+            tx_options
         )
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
@@ -155,7 +146,7 @@ async def main():
     parser = argparse.ArgumentParser(description='Place and manage orders on the orderbook')
     parser.add_argument('action', choices=[
         'limit_buy', 'limit_sell', 'market_buy', 'market_sell',
-        'cancel', 'batch_update', 'get_l2_book'
+        'cancel', 'get_l2_book'
     ], help='Action to perform')
     
     # Add action-specific arguments
@@ -213,16 +204,6 @@ async def main():
             return
         await cancel_orders(orderbook, args.order_ids)
     
-    elif args.action == 'batch_update':
-        await batch_update(
-            orderbook,
-            args.buy_prices or [],
-            args.buy_sizes or [],
-            args.sell_prices or [],
-            args.sell_sizes or [],
-            args.order_ids or [],
-            args.post_only
-        )
 
 async def get_l2_book(orderbook: Orderbook):
     return await orderbook.fetch_orderbook()
