@@ -199,13 +199,13 @@ async def main():
         await place_limit_buy(client, args.price, args.size, args.post_only)
     
     elif args.action == 'limit_sell':
-        await place_limit_sell(orderbook, args.price, args.size, args.post_only)
+        await place_limit_sell(client, args.price, args.size, args.post_only)
     
     elif args.action == 'market_buy':
-        await place_market_buy(orderbook, args.size, args.min_out or "0")
+        await place_market_buy(client, args.size, args.min_out or "0")
     
     elif args.action == 'market_sell':
-        await place_market_sell(orderbook, args.size, args.min_out or "0")
+        await place_market_sell(client, args.size, args.min_out or "0")
     
     elif args.action == 'cancel':
         if not args.order_ids:

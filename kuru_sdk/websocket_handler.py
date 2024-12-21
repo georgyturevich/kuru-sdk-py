@@ -43,7 +43,7 @@ class WebSocketHandler:
             if self._on_trade:
                 await self._on_trade(payload)
 
-        @self.sio.on('OrderCancelled')
+        @self.sio.on('OrdersCanceled')
         async def on_order_cancelled(payload):
             print(f"WebSocket: OrderCancelled event received: {payload}")
             if self._on_order_cancelled:
