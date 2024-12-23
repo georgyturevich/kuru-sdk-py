@@ -106,6 +106,27 @@ class L2Book:
 
         # Combine all parts
         return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
+    
+    def to_formatted_l2_book(self) -> 'FormattedL2Book':
+        # combine the orderbook and amm orderbook similar to the __str__ method
+        combined_buys = {}
+        combined_sells = {}
+
+        for order in self.buy_orders:
+            combined_buys[order.price] = order.size
+        for order in self.sell_orders:
+            combined_sells[order.price] = order.size
+
+        for order in self.amm_buy_orders:
+            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        for order in self.amm_sell_orders:
+            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+        
+        return FormattedL2Book(
+            block_num=self.block_num,
+            buy_orders=combined_buys,
+            sell_orders=combined_sells
+        )
 
 @dataclass
 class FormattedL2Book:
