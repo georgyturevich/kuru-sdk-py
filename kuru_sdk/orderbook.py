@@ -42,11 +42,6 @@ class TxOptions:
     max_priority_fee_per_gas: Optional[int] = None
     nonce: Optional[int] = None
 
-@dataclass
-class OrderPriceSize:
-    price: float
-    size: float
-
 
 @dataclass
 class VaultParams:
@@ -59,11 +54,58 @@ class VaultParams:
     vault_ask_order_size: int
 
 @dataclass
+class OrderPriceSize:
+    price: float
+    size: float
+
+@dataclass
 class L2Book:
     block_num: int
     buy_orders: List[OrderPriceSize]
     sell_orders: List[OrderPriceSize]
+    amm_buy_orders: List[OrderPriceSize]
+    amm_sell_orders: List[OrderPriceSize]
     vault_params: VaultParams
+
+    def __str__(self) -> str:
+        # Combine regular and AMM orders
+        combined_buys = {}
+        combined_sells = {}
+
+        # Process regular orders
+        for order in self.buy_orders:
+            combined_buys[order.price] = order.size
+        for order in self.sell_orders:
+            combined_sells[order.price] = order.size
+
+        # Add AMM orders, combining sizes for matching prices
+        for order in self.amm_buy_orders:
+            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        for order in self.amm_sell_orders:
+            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+
+        # Convert to sorted lists
+        sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)
+        sorted_sells = sorted(combined_sells.items(), key=lambda x: x[0])
+
+        # Format the table
+        header = f"{'Price':>12} | {'Size':>12}"
+        separator = "-" * 27
+        rows = []
+
+        # Add sell orders (highest to lowest)
+        for price, size in sorted_sells:
+            rows.append(f"{price:>12.8f} | {size:>12.8f}")
+
+        # Add separator between sells and buys
+        rows.append(separator)
+
+        # Add buy orders (highest to lowest)
+        for price, size in sorted_buys:
+            rows.append(f"{price:>12.8f} | {size:>12.8f}")
+
+        # Combine all parts
+        return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
 
 class Orderbook:
     def __init__(
@@ -394,7 +436,7 @@ class Orderbook:
         
     async def get_vault_params_from_contract(self) -> VaultParams:
         """Fetch vault parameters from the contract"""
-        vault_params = await self.contract.functions.getVaultParams().call()
+        vault_params = self.contract.functions.getVaultParams().call()
         return VaultParams(
             kuru_amm_vault=vault_params[0],
             vault_best_bid=vault_params[1],
@@ -457,8 +499,9 @@ class Orderbook:
         # Get AMM prices
         amm_prices = await self._get_amm_prices()
         total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)
-        buy_orders.extend(amm_prices[0])  # Add AMM buy orders
-        sell_orders.extend(amm_prices[1])  # Add AMM sell orders
+        
+        [amm_buy_orders, amm_sell_orders] = amm_prices
+
 
         # round buy_orders down to total_decimals
         # round sell_orders up to total_decimals
@@ -471,6 +514,8 @@ class Orderbook:
             block_num=block_num,
             buy_orders=buy_orders,
             sell_orders=sell_orders,
+            amm_buy_orders=amm_buy_orders, 
+            amm_sell_orders=amm_sell_orders,
             vault_params=vault_params
         )
 
@@ -608,17 +653,18 @@ class Orderbook:
         """Convert Wei to ETH"""
         return float(wei_value) / 1e18
     
-    # def reconcile_orderbook(self, orderbook: L2Book, event: str, payload: Dict) -> L2Book:
-    #     """Reconcile the orderbook to ensure it is updated with new orders / trades"""
+    def reconcile_orderbook(self, orderbook: L2Book, event: str, payload: Dict) -> L2Book:
+        """Reconcile the orderbook to ensure it is updated with new orders / trades"""
 
-    #     if event == "OrderCreated":
+        if event == "OrderCreated":
+            orderbook = self._reconcile_orderbook_for_order_created(orderbook, payload)
             
-    #     elif event == "OrderCancelled":
-            
-    #     elif event == "Trade":
-            
+        elif event == "OrderCancelled":
+            orderbook = self._reconcile_orderbook_for_order_cancelled(orderbook, payload)
+        elif event == "Trade":
+            orderbook = self._reconcile_orderbook_for_trade(orderbook, payload)
 
-    #     return orderbook
+        return orderbook
     
 
 
@@ -655,6 +701,8 @@ class Orderbook:
             block_num=block_num,
             buy_orders=buy_orders,
             sell_orders=sell_orders,
+            amm_buy_orders=orderbook.amm_buy_orders,
+            amm_sell_orders=orderbook.amm_sell_orders,
             vault_params=orderbook.vault_params
         )
     
@@ -693,10 +741,10 @@ class Orderbook:
             block_num=block_num,
             buy_orders=buy_orders,
             sell_orders=sell_orders,
+            amm_buy_orders=orderbook.amm_buy_orders,
+            amm_sell_orders=orderbook.amm_sell_orders,
             vault_params=orderbook.vault_params
         )
-    
-
     
     def _reconcile_orderbook_for_trade(self, orderbook: L2Book, payload: Dict) -> L2Book:
         block_num = payload['blockNumber']
@@ -717,8 +765,6 @@ class Orderbook:
         else:
             # regular trade
             new_orderbook = self._handle_regular_trade(new_orderbook, payload)
-
-
 
 
     def _handle_amm_trade(self, orderbook: L2Book, payload: Dict) -> L2Book:
@@ -754,25 +800,43 @@ class Orderbook:
             
 
         amm_prices = self._get_amm_prices_for_vault(orderbook.vault_params)
-
-        # TODO: Handle adding amm prices to orderbook
+        
+        orderbook.amm_buy_orders = amm_prices[0]
+        orderbook.amm_sell_orders = amm_prices[1]
 
         return orderbook
 
 
     def _handle_regular_trade(self, orderbook: L2Book, payload: Dict) -> L2Book:
         """Handle a regular trade event"""
-        filled_size = payload['filledSize'] * log10(self.market_params.size_precision)
+        filled_size = payload['filledSize'] / self.market_params.size_precision  # Fixed conversion
 
-        raw_trade_price = payload['price'] * 10**18
+        raw_trade_price = payload['price']  # Price should already be in correct format from contract
         formatted_price = self.format_price(raw_trade_price, payload['isBuy'])
 
         side_to_update = orderbook.buy_orders if payload['isBuy'] else orderbook.sell_orders
 
-        
+        # Find the order at the given price level
+        for i, order in enumerate(side_to_update):
+            if order.price == formatted_price:
+                # Update the size
+                new_size = order.size - filled_size
+                if new_size <= 0:
+                    # Remove the price level if size is zero or negative
+                    side_to_update.pop(i)
+                else:
+                    # Update the size if there's remaining quantity
+                    side_to_update[i] = OrderPriceSize(price=formatted_price, size=new_size)
+                break
 
+        # Update the appropriate side in the orderbook
+        if payload['isBuy']:
+            orderbook.buy_orders = side_to_update
+        else:
+            orderbook.sell_orders = side_to_update
 
-    
+        return orderbook
+
     def format_price(self, price: int, is_buy: bool) -> float:
         """Format a price to the correct precision"""
         total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)

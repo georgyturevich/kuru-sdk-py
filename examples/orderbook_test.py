@@ -37,7 +37,8 @@ orderbook = Orderbook(
 )
 
 async def main():
-    print(await orderbook.fetch_orderbook())
+    l2_book = await orderbook.fetch_orderbook()
+    print(l2_book)
 
 asyncio.run(main())
 
