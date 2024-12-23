@@ -107,6 +107,32 @@ class L2Book:
         # Combine all parts
         return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
 
+@dataclass
+class FormattedL2Book:
+    block_num: int
+    buy_orders: List[OrderPriceSize]
+    sell_orders: List[OrderPriceSize]
+
+    def __str__(self) -> str:
+        # Format the table
+        header = f"{'Price':>12} | {'Size':>12}"
+        separator = "-" * 27
+        rows = []
+
+        # Add sell orders (highest to lowest)
+        for order in sorted(self.sell_orders, key=lambda x: x.price):
+            rows.append(f"{order.price:>12.8f} | {order.size:>12.8f}")
+
+        # Add separator between sells and buys
+        rows.append(separator)
+
+        # Add buy orders (highest to lowest)
+        for order in sorted(self.buy_orders, key=lambda x: x.price, reverse=True):
+            rows.append(f"{order.price:>12.8f} | {order.size:>12.8f}")
+
+        # Combine all parts
+        return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
+
 class Orderbook:
     def __init__(
         self,
@@ -293,7 +319,6 @@ class Orderbook:
         tx_hash = await self._execute_transaction(tx)
         return tx_hash
     
-
     async def prepare_market_buy(
         self,
         size: str,
@@ -325,7 +350,6 @@ class Orderbook:
         )
         tx_hash = await self._execute_transaction(tx)
         return tx_hash
-
 
     async def prepare_market_sell(
         self,
@@ -845,7 +869,43 @@ class Orderbook:
         else:
             return ceil(price / 10**18 * 10**total_decimals) / 10**total_decimals
 
+    def get_formatted_orderbook(self) -> FormattedL2Book:
+        """
+        Combines regular and AMM orders into a single formatted orderbook.
+        
+        Returns:
+            FormattedL2Book: Combined orderbook with merged regular and AMM orders
+        """
+        # Combine regular and AMM orders
+        combined_buys = {}
+        combined_sells = {}
 
+        # Process regular orders
+        for order in self.buy_orders:
+            combined_buys[order.price] = order.size
+        for order in self.sell_orders:
+            combined_sells[order.price] = order.size
 
+        # Add AMM orders, combining sizes for matching prices
+        for order in self.amm_buy_orders:
+            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        for order in self.amm_sell_orders:
+            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+
+        # Convert back to OrderPriceSize objects
+        formatted_buys = [
+            OrderPriceSize(price=price, size=size)
+            for price, size in combined_buys.items()
+        ]
+        formatted_sells = [
+            OrderPriceSize(price=price, size=size)
+            for price, size in combined_sells.items()
+        ]
+
+        return FormattedL2Book(
+            block_num=self.block_num,
+            buy_orders=formatted_buys,
+            sell_orders=formatted_sells
+        )
 
 __all__ = ['Orderbook']
