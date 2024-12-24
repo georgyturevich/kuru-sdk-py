@@ -20,7 +20,7 @@ class OrderRequest:
     is_margin: Optional[bool] = None
     fill_or_kill: Optional[bool] = None
     min_amount_out: Optional[str] = None  # For market orders
-    order_ids: Optional[List[int]] = None # For batch cancel
+    order_ids: Optional[List[int | str]] = None # For batch cancel
     cloid: Optional[str] = None
 
 @dataclass
