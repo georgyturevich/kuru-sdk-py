@@ -36,7 +36,7 @@ async def main():
     )
     
     # Deposit 100 USDC
-    # client.deposit(ADDRESSES['usdc'], 100000000000000000000000)
+    client.deposit(ADDRESSES['usdc'], 100000000000000000000000)
 
     print(await client.view_margin_balance(ADDRESSES['usdc']))
 

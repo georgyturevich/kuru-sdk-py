@@ -66,9 +66,9 @@ class MarketMaker:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
-                # price = 1 + random.uniform(-0.005, 0.005)
-                # return Decimal(price)
-                return Decimal(data["price"])
+                price = 1 + random.uniform(-0.005, 0.005)
+                return Decimal(price)
+                # return Decimal(data["price"])
             
 
     async def update_orders(self):

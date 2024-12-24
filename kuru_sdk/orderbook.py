@@ -52,6 +52,7 @@ class VaultParams:
     ask_partially_filled_size: int
     vault_bid_order_size: int
     vault_ask_order_size: int
+    spread: int
 
 @dataclass
 class OrderPriceSize:
@@ -84,9 +85,9 @@ class L2Book:
         for order in self.amm_sell_orders:
             combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
 
-        # Convert to sorted lists
-        sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)
-        sorted_sells = sorted(combined_sells.items(), key=lambda x: x[0])
+        # Convert to sorted lists (sells in descending order)
+        sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)[:10]  # Top 10 bids
+        sorted_sells = sorted(combined_sells.items(), key=lambda x: x[0], reverse=True)[-10:]  # Last 10 asks
 
         # Format the table
         header = f"{'Price':>12} | {'Size':>12}"
@@ -445,12 +446,12 @@ class Orderbook:
 
     async def batch_orders(
         self,
-        buy_prices: List[str],
-        buy_sizes: List[str],
-        sell_prices: List[str],
-        sell_sizes: List[str],
-        order_ids_to_cancel: List[str],
-        post_only: bool,
+        buy_prices: Optional[List[str]] = None,
+        buy_sizes: Optional[List[str]] = None,
+        sell_prices: Optional[List[str]] = None,
+        sell_sizes: Optional[List[str]] = None,
+        order_ids_to_cancel: Optional[List[str]] = None,
+        post_only: Optional[bool] = None,
         tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_batch_orders(
@@ -473,7 +474,8 @@ class Orderbook:
                 'vault_best_ask': int(vault_params[3]),
                 'ask_partially_filled_size': int(vault_params[4]),
                 'vault_bid_order_size': int(vault_params[5]),
-                'vault_ask_order_size': int(vault_params[6])
+                'vault_ask_order_size': int(vault_params[6]),
+                'spread': int(vault_params[7])
             }
         except Exception as e:
             print(f"Error fetching vault parameters: {str(e)}")
@@ -489,7 +491,8 @@ class Orderbook:
             vault_best_ask=vault_params[3],
             ask_partially_filled_size=vault_params[4],
             vault_bid_order_size=vault_params[5],
-            vault_ask_order_size=vault_params[6]
+            vault_ask_order_size=vault_params[6],
+            spread=vault_params[7]
         )
     
     async def fetch_orderbook(self) -> L2Book:
@@ -703,12 +706,12 @@ class Orderbook:
 
         if event == "OrderCreated":
             orderbook = self._reconcile_orderbook_for_order_created(orderbook, payload)
-            
         elif event == "OrderCancelled":
             orderbook = self._reconcile_orderbook_for_order_cancelled(orderbook, payload)
         elif event == "Trade":
             orderbook = self._reconcile_orderbook_for_trade(orderbook, payload)
 
+        print(f"Reconciled orderbook: {orderbook.vault_params}")
         return orderbook
     
 
@@ -717,14 +720,16 @@ class Orderbook:
         """Reconcile the orderbook for an order created event"""
         total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)
         is_buy = payload['isBuy']
-        size = payload['size'] / self.market_params.size_precision
+        size = int(payload['size']) / self.market_params.size_precision
 
         buy_orders = orderbook.buy_orders
         sell_orders = orderbook.sell_orders
         block_num = payload['blockNumber']
 
         if is_buy:
-            price = floor((payload['price'] / 10**18) * 10**total_decimals) / 10**total_decimals 
+            price = floor((int(payload['price']) / self.market_params.price_precision) * 10**total_decimals) / 10**total_decimals 
+            print(f"Price: {price}")
+            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
             # find the corresponding price in the buy_orders list
             for order in buy_orders:
                 if order.price == price:
@@ -733,7 +738,7 @@ class Orderbook:
             else:
                 buy_orders.append(OrderPriceSize(price=price, size=size))
         else:
-            price = ceil((payload['price'] / 10**18) * 10**total_decimals) / 10**total_decimals 
+            price = ceil((int(payload['price']) / self.market_params.price_precision) * 10**total_decimals) / 10**total_decimals 
             # find the corresponding price in the sell_orders list
             for order in sell_orders:
                 if order.price == price:
@@ -764,8 +769,8 @@ class Orderbook:
 
         for order in orders_cancelled:
             if order['isBuy']:
-                size = order['size'] / self.market_params.size_precision
-                price = floor((payload['price'] / 10**18) * 10**total_decimals) / 10**total_decimals
+                size = int(order['size']) / self.market_params.size_precision
+                price = floor((int(order['price']) / 10**18) * 10**total_decimals) / 10**total_decimals
                 # find the corresponding price in the buy_orders list
                 for order in buy_orders:
                     if order.price == price:
@@ -797,27 +802,38 @@ class Orderbook:
             block_num=block_num,
             buy_orders=orderbook.buy_orders,
             sell_orders=orderbook.sell_orders,
+            amm_buy_orders=orderbook.amm_buy_orders,
+            amm_sell_orders=orderbook.amm_sell_orders,
             vault_params=orderbook.vault_params
         )
+
+        print(f"New orderbook: {new_orderbook.vault_params}")
 
         total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)
 
         order_id = payload['orderId']
+            
+        print(f"Order ID: {order_id}")
 
         if order_id == 0:
             # amm trade
+            print(f"Handling AMM trade")
             new_orderbook = self._handle_amm_trade(new_orderbook, payload)
         else:
             # regular trade
+            print(f"Handling regular trade")
             new_orderbook = self._handle_regular_trade(new_orderbook, payload)
 
+        print(f"New orderbook: {new_orderbook.vault_params}")
+
+        return new_orderbook
 
     def _handle_amm_trade(self, orderbook: L2Book, payload: Dict) -> L2Book:
         """Handle an AMM trade event"""
         is_buy = payload['isBuy']
 
         SPREAD = orderbook.vault_params.spread / 10
-        updated_size = payload['size']
+        updated_size = int(payload['updatedSize'])
 
         if is_buy:
 
@@ -843,9 +859,10 @@ class Orderbook:
             else:
                 orderbook.vault_params.bid_partially_filled_size = orderbook.vault_params.vault_bid_order_size - updated_size
             
-
+        print(f"Acquired vault params: {orderbook.vault_params}")
         amm_prices = self._get_amm_prices_for_vault(orderbook.vault_params)
         
+        print(f"Acquired AMM prices")
         orderbook.amm_buy_orders = amm_prices[0]
         orderbook.amm_sell_orders = amm_prices[1]
 

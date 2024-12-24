@@ -4,7 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from kuru_sdk.orderbook import TxOptions
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
@@ -14,8 +13,8 @@ from typing import Dict, List, Optional, Literal, Callable
 from dataclasses import dataclass
 from web3 import Web3
 from kuru_sdk.margin import MarginAccount
-from kuru_sdk.order_executor import OrderExecutor, OrderRequest
-
+from kuru_sdk.order_executor import OrderExecutor, OrderRequest, TradeEvent
+from kuru_sdk.orderbook import L2Book, TxOptions
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -49,16 +48,20 @@ class KuruClient:
     self.on_order_cancelled = on_order_cancelled
 
     self.cloid_to_market_address = {}
+
+    self.cloid_to_order = {}
+
     self.order_executors = {}
 
     self.NATIVE_TOKEN_ADDRESS = '0x0000000000000000000000000000000000000000'
 
   async def deposit(self, token_address: str, amount: int):
-    token_contract = self.web3.eth.contract(
+    
+    if token_address != self.NATIVE_TOKEN_ADDRESS:
+      token_contract = self.web3.eth.contract(
         address=Web3.to_checksum_address(token_address),
         abi=self.erc20_abi
-    )
-    if token_address != self.NATIVE_TOKEN_ADDRESS:
+      )
       allowance = token_contract.functions.allowance(self.user_address, self.margin_account.contract_address).call()
       if allowance < amount:
         allowance_tx = token_contract.functions.approve(self.margin_account.contract_address, amount).build_transaction({
@@ -81,6 +84,7 @@ class KuruClient:
 
   async def create_order(self, order_request: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()):
     cloid = order_request.cloid
+    self.cloid_to_order[cloid] = order_request
     market_address = order_request.market_address
     print(f"Creating order for market: {market_address}")
     if market_address not in self.order_executors:
@@ -123,7 +127,8 @@ class KuruClient:
       print(f"Connected to order executor for market: {market_address}")
 
     order_executor = self.order_executors[market_address]
-    tx_hash = await order_executor.batch_orders(order_requests, tx_options)
+    order_requests_formatted = self.format_order_request_for_batch_orders(order_requests)
+    tx_hash = await order_executor.batch_orders(order_requests_formatted, tx_options)
     print(f"Batch orders placed successfully with transaction hash: {tx_hash}")
     return tx_hash
   
@@ -147,6 +152,41 @@ class KuruClient:
       self.user_address,
       token_address
     )
+  
+  async def get_orderbook(self, market_address: str) -> L2Book:
+    if market_address not in self.order_executors:
+      self.order_executors[market_address] = OrderExecutor(
+        self.web3, 
+        market_address, 
+        self.websocket_url,
+        self.private_key, 
+        self.on_order_created, 
+        self.on_trade, 
+        self.on_order_cancelled
+      )
+      await self.order_executors[market_address].connect()
+      print(f"Connected to order executor for market: {market_address}")
+  
+    orderbook = self.order_executors[market_address].orderbook
+    l2_book = await orderbook.fetch_orderbook()
+    return l2_book
+  
+  def get_all_executed_trades_for_market(self, market_address: str) -> List[TradeEvent]:
+    return self.order_executors[market_address].get_all_executed_trades()
+  
+  def get_all_cancelled_orders_for_market(self, market_address: str) -> List[str]:
+    return self.order_executors[market_address].get_all_cancelled_orders()
+
+  def format_order_request_for_batch_orders(self, order_requests: List[OrderRequest]) -> List[OrderRequest]:
+    for order in order_requests:
+      if order.order_type == 'cancel':
+        new_order_ids = []
+        for cloid in order.order_ids:
+          order_id = self.cloid_to_order_id[cloid]
+          new_order_ids.append(order_id)
+        order.order_ids = new_order_ids
+
+    return order_requests
   
   async def disconnect(self):
     for order_executor in self.order_executors.values():

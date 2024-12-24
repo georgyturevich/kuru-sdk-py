@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Literal
 from dataclasses import dataclass
 import asyncio
 import socketio
+import json
 
 from web3 import Web3
 
@@ -11,14 +12,15 @@ from .orderbook import Orderbook, TxOptions
 @dataclass
 class OrderRequest:
     market_address: str
-    order_type: Literal["limit", "market"]
-    side: Literal["buy", "sell"]
+    order_type: Literal["limit", "market", "cancel"]
+    side: Optional[Literal["buy", "sell"]] = None
     price: Optional[str] = None  # Optional for market orders
-    size: str = ""
-    post_only: bool = False
-    is_margin: bool = False
-    fill_or_kill: bool = False
+    size: Optional[str] = None
+    post_only: Optional[bool] = None
+    is_margin: Optional[bool] = None
+    fill_or_kill: Optional[bool] = None
     min_amount_out: Optional[str] = None  # For market orders
+    order_ids: Optional[List[int]] = None # For batch cancel
     cloid: Optional[str] = None
 
 @dataclass
@@ -135,52 +137,92 @@ class OrderExecutor:
 
 
     async def _handle_order_created(self, payload):
-        tx_hash = payload.get('transactionHash')
-        if tx_hash in self.tx_to_cloid:
-            cloid = self.tx_to_cloid[tx_hash]
-            print(f"Order created for CLOID: {cloid}, TX: {tx_hash}")
-            order_event = OrderCreatedEvent.from_dict(payload)
-            self.cloid_to_order[cloid] = order_event
-            self.cloid_to_order_id[cloid] = order_event.orderId
+        print(f"Received order created event: {payload}")
+        try:
+            # Parse the payload into an OrderCreatedEvent
+            if isinstance(payload, dict):
+                tx_hash = payload.get('transactionHash')
+                order_event = OrderCreatedEvent.from_dict(payload)
+            elif isinstance(payload, str):
+                data = json.loads(payload)
+                tx_hash = data.get('transactionHash')
+                order_event = OrderCreatedEvent.from_dict(data)
+            else:
+                tx_hash = payload.transactionHash
+                order_event = payload
+
+            # Look up the CLOID using the transaction hash
+            if tx_hash in self.tx_to_cloid:
+                cloid = self.tx_to_cloid[tx_hash]
+                print(f"Order created for CLOID: {cloid}, TX: {tx_hash}")
+                
+                # Store the order event and order ID
+                self.cloid_to_order[cloid] = order_event
+                self.cloid_to_order_id[cloid] = order_event.orderId
+                
             if self.on_order_created:
-                await self.on_order_created(order_event)
+                self.on_order_created(payload)
+
+        except Exception as e:
+            print(f"Error handling order created event: {e}")
 
     async def _handle_trade(self, payload):
-        order_id = payload.get('orderId')
-        tx_hash = payload.get('transactionHash')
-        if order_id in self.cloid_to_order_id:
-            cloid = self.cloid_to_order_id[order_id]
-            print(f"Trade executed for CLOID: {cloid}, Order ID: {order_id}")
-            trade_event = TradeEvent.from_dict(payload)
-            if self.executed_trades.get(cloid):
-                self.executed_trades[cloid].append(trade_event)
-            else:
-                self.executed_trades[cloid] = [trade_event]
-            if self.on_trade:
-                await self.on_trade(trade_event)
+        # Initialize trade_event before any conditional blocks
+        trade_event = None
+        
+        try:
+            # Your existing trade event parsing logic
+            if isinstance(payload, dict):
+                trade_event = payload
+            elif isinstance(payload, str):
+                trade_event = json.loads(payload)
 
-        if tx_hash in self.tx_to_cloid:
-            cloid = self.tx_to_cloid[tx_hash]
-            print(f"Trade executed for CLOID: {cloid}, TX: {tx_hash}")
-            trade_event = TradeEvent.from_dict(payload)
-            if self.executed_trades.get(cloid):
-                self.executed_trades[cloid].append(trade_event)
-            else:
-                self.executed_trades[cloid] = [trade_event]
-            if self.on_trade:
-                await self.on_trade(trade_event)
+            order_id = trade_event.get('orderId')
+            tx_hash = trade_event.get('transactionHash')
+            if order_id in self.cloid_to_order_id:
+                cloid = self.cloid_to_order_id[order_id]
+                print(f"Trade executed for CLOID: {cloid}, Order ID: {order_id}")
+                if self.executed_trades.get(cloid):
+                    self.executed_trades[cloid].append(trade_event)
+                else:
+                    self.executed_trades[cloid] = [trade_event]
+
+            if tx_hash in self.tx_to_cloid:
+                cloid = self.tx_to_cloid[tx_hash]
+                print(f"Trade executed for CLOID: {cloid}, TX: {tx_hash}")
+                if self.executed_trades.get(cloid):
+                    self.executed_trades[cloid].append(trade_event)
+                else:
+                    self.executed_trades[cloid] = [trade_event]
+            
+            # Only call on_trade if we have a valid trade_event
+            if trade_event and self.on_trade:
+                self.on_trade(trade_event)
+                
+        except Exception as e:
+            print(f"Error handling trade event: {e}")
 
     async def _handle_order_cancelled(self, payload):
-        order_id = payload.get('orderId')
-        if order_id in self.cloid_to_order_id:
-            cloid = self.cloid_to_order_id[order_id]
-            print(f"Order cancelled for CLOID: {cloid}, Order ID: {order_id}")
-            self.cancelled_orders[order_id] = cloid
+        order_event = None
+        try:
+            if isinstance(payload, dict):
+                order_event = payload
+            elif isinstance(payload, str):
+                order_event = json.loads(payload)
+
+            order_id = order_event.get('orderId')
+            if order_id in self.cloid_to_order_id:
+                    cloid = self.cloid_to_order_id[order_id]
+                    print(f"Order cancelled for CLOID: {cloid}, Order ID: {order_id}")
+                    self.cancelled_orders[order_id] = cloid
+                    del self.cloid_to_order_id[order_id]
+                    del self.cloid_to_order[cloid]
             if self.on_order_cancelled:
-                await self.on_order_cancelled(payload)
-            del self.cloid_to_order_id[order_id]
-            del self.cloid_to_order[cloid]
-                
+                self.on_order_cancelled(payload)
+
+        except Exception as e:
+            print(f"Error handling order cancelled event: {e}")
+
     async def connect(self):
         """Connect to the WebSocket server"""
         print(f"Connecting to WebSocket server: {self.websocket_url}")
@@ -244,6 +286,10 @@ class OrderExecutor:
                         fill_or_kill=order.fill_or_kill,
                         tx_options=tx_options
                     )
+
+            if order.order_type == "cancel":
+                tx_hash = await self.orderbook.batch_orders(order_ids_to_cancel=order.order_ids, tx_options=tx_options)
+
             tx_hash = f"0x{tx_hash}".lower()
             if tx_hash and cloid:
                 self._store_order_mapping(cloid, tx_hash)
@@ -265,16 +311,16 @@ class OrderExecutor:
 
         # Sort orders into buy and sell lists
         for order in order_requests:
-            if order.order_type != "limit":
-                raise ValueError("Batch orders only support limit orders")
-            
-            if not order.price:
-                raise ValueError("Price is required for limit orders")
+
+            if order.order_type == 'cancel':
+                for order_id in order.order_ids:
+                    order_ids_to_cancel.append(order_id)
+                continue
 
             if order.side == "buy":
                 buy_prices.append(order.price)
                 buy_sizes.append(order.size)
-            else:  # sell
+            elif order.side == "sell":  # sell
                 sell_prices.append(order.price)
                 sell_sizes.append(order.size)
             
@@ -311,19 +357,12 @@ class OrderExecutor:
         """Get CLOID for a given transaction hash"""
         return self.tx_to_cloid.get(tx_hash)
 
-
-async def listen_for_events(order_executor):
-    while True:
-        # Listen for order created events
-        cloid, order_event = await order_executor.order_created_channel.get()
-        print(f"Received order created event for {cloid}: {order_event}")
-
-        # Listen for trade events
-        cloid, trade = await order_executor.trade_channel.get()
-        print(f"Received trade event for {cloid}: {trade}")
-
-        # Listen for cancellation events
-        cloid, cancellation = await order_executor.order_cancelled_channel.get()
-        print(f"Received cancellation event for {cloid}: {cancellation}")
-
+    def get_all_executed_trades(self) -> List[TradeEvent]:
+        """Get all executed trades"""
+        return [trade for trades in self.executed_trades.values() for trade in trades]
     
+    def get_all_cancelled_orders(self) -> List[str]:
+        """Get all cancelled orders"""
+        return list(self.cancelled_orders.keys())
+    
+
