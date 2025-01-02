@@ -58,9 +58,10 @@ from kuru_sdk.client import KuruClient
 # Network and contract configuration
 NETWORK_RPC = os.getenv("RPC_URL")  # Replace with your network RPC
 ADDRESSES = {
+    'mon/usdc': '0x3a4cc34d6cc8b5e8aeb5083575aaa27f2a0a184a',
     'margin_account': '0x33fa695D1B81b88638eEB0a1d69547Ca805b8949',
     'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
-    'wbtc': '0x0000000000000000000000000000000000000000'
+    'mon': '0x0000000000000000000000000000000000000000'
 }
 
 async def main():
@@ -90,7 +91,7 @@ async def main():
     # Limit buy
     order = OrderRequest(
         cloid = "mm_1"
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='limit',
         side='buy',
         price=price,
@@ -101,7 +102,7 @@ async def main():
     # Limit sell
     order = OrderRequest(
         cloid = "mm_2"
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='limit',
         side='sell',
         price=price,
@@ -112,7 +113,7 @@ async def main():
     # Market buy
     order = OrderRequest(
         cloid = "mm_3"
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='market',
         side='buy',
         size=size,
@@ -123,7 +124,7 @@ async def main():
     # Market sell
     order = OrderRequest(
         cloid = "mm_4"
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='market',
         side='sell',
         size=size,
@@ -150,7 +151,7 @@ async def main():
     # Limit buy
     order1 = OrderRequest(
         cloid = "mm_5"
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='limit',
         side='buy',
         price=price,
@@ -161,7 +162,7 @@ async def main():
     # Limit sell
     order2 = OrderRequest(
         cloid = "mm_6"
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='limit',
         side='sell',
         price=price,
@@ -171,7 +172,7 @@ async def main():
 
     # Cancel order
     order3 = OrderRequest(
-        market_address=ADDRESSES['orderbook'],
+        market_address=ADDRESSES['mon/usdc'],
         order_type='cancel',
         order_ids_to_cancel=["mm_1", "mm_2"]
     )
@@ -294,7 +295,7 @@ async def main():
 
   web3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
 
-  market_address = ADDRESSES['orderbook']
+  market_address = ADDRESSES['mon/usdc']
 
   orderbook = Orderbook(
     web3=web3,

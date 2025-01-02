@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from web3 import Web3
 from kuru_sdk.margin import MarginAccount
 from kuru_sdk.order_executor import OrderExecutor, OrderRequest, TradeEvent
-from kuru_sdk.orderbook import L2Book, TxOptions
+from kuru_sdk.orderbook import L2Book, Orderbook, TxOptions
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -154,20 +154,7 @@ class KuruClient:
     )
   
   async def get_orderbook(self, market_address: str) -> L2Book:
-    if market_address not in self.order_executors:
-      self.order_executors[market_address] = OrderExecutor(
-        self.web3, 
-        market_address, 
-        self.websocket_url,
-        self.private_key, 
-        self.on_order_created, 
-        self.on_trade, 
-        self.on_order_cancelled
-      )
-      await self.order_executors[market_address].connect()
-      print(f"Connected to order executor for market: {market_address}")
-  
-    orderbook = self.order_executors[market_address].orderbook
+    orderbook = Orderbook(self.web3, market_address, self.private_key)
     l2_book = await orderbook.fetch_orderbook()
     return l2_book
   
