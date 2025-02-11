@@ -4,22 +4,8 @@ from typing import Optional, List, Tuple, Dict, Any, NamedTuple
 from dataclasses import dataclass
 from decimal import Decimal
 import json
-from eth_utils import big_endian_to_int
 import os
 
-class OrderbookError:
-    class NormalizationError(Exception):
-        pass
-    class EncodingError(Exception):
-        pass
-    class GasPriceError(Exception):
-        pass
-    class TransactionError(Exception):
-        pass
-    class GasEstimationError(Exception):
-        def __init__(self, message: str):
-            self.message = message
-            super().__init__(self.message)
 
 @dataclass
 class MarketParams:
@@ -208,7 +194,7 @@ class Orderbook:
             size_normalized = float(size) * float(str(self.market_params.size_precision))
             return (int(price_normalized), int(size_normalized))
         except (ValueError, TypeError) as e:
-            raise OrderbookError.NormalizationError(f"Error normalizing values: {str(e)}")
+            raise "Error normalizing values: " + str(e)
 
     async def _prepare_transaction(
         self, 
@@ -271,7 +257,7 @@ class Orderbook:
             
             return tx_hash.hex()
         except Exception as e:
-            raise OrderbookError.TransactionError(f"Error executing transaction: {str(e)}")
+            raise "Error executing transaction: " + str(e)
 
     async def prepare_buy_order(
         self,
@@ -478,8 +464,7 @@ class Orderbook:
                 'spread': int(vault_params[7])
             }
         except Exception as e:
-            print(f"Error fetching vault parameters: {str(e)}")
-            raise OrderbookError(f"Failed to get vault params: {str(e)}")
+            raise "Error fetching vault parameters: " + str(e)
         
     async def get_vault_params_from_contract(self) -> VaultParams:
         """Fetch vault parameters from the contract"""
