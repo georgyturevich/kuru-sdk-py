@@ -22,6 +22,7 @@ class OrderRequest:
     min_amount_out: Optional[str] = None  # For market orders
     order_ids: Optional[List[int | str]] = None # For batch cancel
     cloid: Optional[str] = None
+    tick_normalization: Optional[str] = None
 
 @dataclass
 class OrderCreatedEvent:
@@ -121,6 +122,7 @@ class OrderExecutor:
         self.tx_to_cloid: Dict[str, str] = {}
         self.cloid_to_order: Dict[str, OrderCreatedEvent] = {}
         self.cloid_to_order_id: Dict[str, int] = {}
+        self.order_id_to_cloid: Dict[int, str] = {}
         self.executed_trades: Dict[int, List[TradeEvent]] = {}
         self.cancelled_orders: Dict[int, str] = {}
 
@@ -159,7 +161,7 @@ class OrderExecutor:
                 # Store the order event and order ID
                 self.cloid_to_order[cloid] = order_event
                 self.cloid_to_order_id[cloid] = order_event.orderId
-                
+                self.order_id_to_cloid[order_event.orderId] = cloid
             if self.on_order_created:
                 self.on_order_created(payload)
 
@@ -217,6 +219,7 @@ class OrderExecutor:
                     self.cancelled_orders[order_id] = cloid
                     del self.cloid_to_order_id[order_id]
                     del self.cloid_to_order[cloid]
+                    del self.order_id_to_cloid[order_id]
             if self.on_order_cancelled:
                 self.on_order_cancelled(payload)
 
@@ -257,6 +260,7 @@ class OrderExecutor:
                         price=order.price,
                         size=order.size,
                         post_only=order.post_only,
+                        tick_normalization=order.tick_normalization,
                         tx_options=tx_options
                     )
                 else:  # sell
@@ -264,6 +268,7 @@ class OrderExecutor:
                         price=order.price,
                         size=order.size,
                         post_only=order.post_only,
+                        tick_normalization=order.tick_normalization,
                         tx_options=tx_options
                     )
             else:  # market
@@ -346,6 +351,7 @@ class OrderExecutor:
     
     async def batch_cancel_orders(self, cloids: List[str], tx_options: Optional[TxOptions] = TxOptions()):
         order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
+        print(f"Cancelling orders with order IDs: {order_ids}")
         tx_hash = await self.orderbook.batch_cancel_orders(order_ids, tx_options)
         return tx_hash
 
@@ -364,3 +370,7 @@ class OrderExecutor:
     def get_all_cancelled_orders(self) -> List[str]:
         """Get all cancelled orders"""
         return list(self.cancelled_orders.keys())
+    
+    def get_order_id_by_cloid(self, cloid: str) -> int:
+        """Get order ID for a given CLOID"""
+        return self.cloid_to_order_id.get(cloid)

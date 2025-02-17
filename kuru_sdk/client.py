@@ -24,6 +24,8 @@ abi_path = Path(__file__).parent / 'abi' / 'ierc20.json'
 with open(abi_path, 'r') as f:
     ERC20_ABI = json.load(f)
 
+
+
 class KuruClient:
   def __init__(
     self, 
@@ -131,6 +133,9 @@ class KuruClient:
     tx_hash = await order_executor.batch_orders(order_requests_formatted, tx_options)
     print(f"Batch orders placed successfully with transaction hash: {tx_hash}")
     return tx_hash
+  
+  async def get_order_id_by_cloid(self, market_address: str, cloid: str) -> int:
+    return self.order_executors[market_address].get_order_id_by_cloid(cloid)
   
   async def cancel_order(self, cloid: str, tx_options: Optional[TxOptions] = TxOptions()):
     market_address = self.cloid_to_market_address[cloid]

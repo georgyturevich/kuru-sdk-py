@@ -66,7 +66,7 @@ class MarketMaker:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
-                price = 1 + random.uniform(-0.005, 0.005)
+                price = 0.00000002 + random.uniform(-0.0000001, 0.0000001)
                 return Decimal(price)
                 # return Decimal(data["price"])
             
@@ -140,8 +140,8 @@ class MarketMaker:
 # Example usage:
 async def main():
     network_rpc = os.getenv("RPC_URL")
-    margin_account_address = "0x33fa695D1B81b88638eEB0a1d69547Ca805b8949"
-    market_address = "0x3a4cc34d6cc8b5e8aeb5083575aaa27f2a0a184a"
+    margin_account_address = "0x4B186949F31FCA0aD08497Df9169a6bEbF0e26ef"
+    market_address = "0x05e6f736b5dedd60693fa806ce353156a1b73cf3"
     private_key = os.getenv("PK")
 
     market_maker = MarketMaker(
@@ -149,7 +149,7 @@ async def main():
         margin_account_address=margin_account_address,
         private_key=private_key,
         market_address=market_address,
-        base_size=Decimal("0.1"),  # 0.1 SOL per order
+        base_size=Decimal("10000"), 
         spread_bps=Decimal("100")   # 1% spread
     )
 

@@ -21,6 +21,7 @@ load_dotenv()
 
 # Network and contract configuration
 NETWORK_RPC = os.getenv("RPC_URL") 
+
 ADDRESSES = {
     'margin_account': '0x4B186949F31FCA0aD08497Df9169a6bEbF0e26ef',
     'orderbook': '0x05e6f736b5dedd60693fa806ce353156a1b73cf3',
@@ -46,6 +47,9 @@ async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: 
         print(f"Placing limit buy order: {size} units at {price}")
         tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
+        tx_hash = await client.create_order(order)
+        print(f"Transaction hash: {tx_hash}")
+        await asyncio.sleep(10)
         return tx_hash
     except Exception as e:
         print(f"Error placing limit buy order: {str(e)}")
@@ -146,7 +150,7 @@ async def main():
     parser = argparse.ArgumentParser(description='Place and manage orders on the orderbook')
     parser.add_argument('action', choices=[
         'limit_buy', 'limit_sell', 'market_buy', 'market_sell',
-        'cancel', 'get_l2_book'
+        'cancel', 'get_l2_book', 'batch_update'
     ], help='Action to perform')
     
     # Add action-specific arguments
@@ -167,6 +171,8 @@ async def main():
     # Initialize Web3 and Orderbook
     web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
     private_key = os.getenv('PK', "")
+
+    print("WS_URL: ", os.getenv('WS_URL'))
 
     client = KuruClient(
         network_rpc=NETWORK_RPC,
@@ -210,7 +216,7 @@ async def main():
                 market_address=ADDRESSES['orderbook'],
                 order_type='market',
                 side='buy',
-                size=args.buy_sizes[0],
+                size=1,
                 min_amount_out=args.min_out or "0",
                 cloid="mm_1"
             ),
@@ -218,15 +224,15 @@ async def main():
                 market_address=ADDRESSES['orderbook'],
                 order_type='limit',
                 side='sell',
-                price=args.sell_prices[0],
-                size=args.sell_sizes[0],
+                price=0.00000002,
+                size=1,
                 cloid="mm_2"
             ),
             OrderRequest(
                 market_address=ADDRESSES['orderbook'],
                 order_type='market',
                 side='sell',
-                size=args.sell_sizes[1],
+                size=1,
                 min_amount_out=args.min_out or "0",
                 cloid="mm_3"
             )

@@ -25,7 +25,7 @@ ADDRESSES = {
     'chog': '0x7E9953A11E606187be268C3A6Ba5f36635149C81',
     'mon': '0x0000000000000000000000000000000000000000'
 }
-WS_URL = "https://ws.staging.kuru.io"
+WS_URL = "https://ws.testnet.kuru.io"
 
 async def main():
     client = KuruClient(

@@ -264,8 +264,19 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
+        tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
+        if tick_normalization == "round_up":
+            # round up to the nearest tick
+            price = self.market_params.tick_size * ceil(float(price) / self.market_params.tick_size)
+        elif tick_normalization == "round_down":
+            # round down to the nearest tick
+            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
+        else:
+            # no normalization
+            price = price
+
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
         return await self._prepare_transaction(
             "addBuyOrder",
@@ -278,9 +289,10 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
+        tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_buy_order(price, size, post_only, tx_options)
+        tx = await self.prepare_buy_order(price, size, post_only, tick_normalization, tx_options)
         return await self._execute_transaction(tx)
 
     async def prepare_sell_order(
@@ -288,8 +300,16 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
+        tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
+        if tick_normalization == "round_up":
+            price = self.market_params.tick_size * ceil(float(price) / self.market_params.tick_size)
+        elif tick_normalization == "round_down":
+            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
+        else:
+            price = price
+
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
         return await self._prepare_transaction(
             "addSellOrder",
@@ -302,9 +322,10 @@ class Orderbook:
         price: str,
         size: str,
         post_only: bool,
+        tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_sell_order(price, size, post_only, tx_options)
+        tx = await self.prepare_sell_order(price, size, post_only, tick_normalization, tx_options)
         return await self._execute_transaction(tx)
 
     async def prepare_batch_cancel_orders(
