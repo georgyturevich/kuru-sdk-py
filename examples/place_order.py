@@ -11,7 +11,7 @@ from kuru_sdk.client import KuruClient
 from kuru_sdk.order_executor import OrderRequest
 
 from web3 import Web3
-from kuru_sdk.orderbook import Orderbook, TxOptions
+from kuru_sdk import Orderbook, TxOptions
 import os
 import json
 import argparse
@@ -22,10 +22,10 @@ load_dotenv()
 # Network and contract configuration
 NETWORK_RPC = os.getenv("RPC_URL") 
 ADDRESSES = {
-    'margin_account': '0x33fa695D1B81b88638eEB0a1d69547Ca805b8949',
-    'orderbook': '0x3a4cc34d6cc8b5e8aeb5083575aaa27f2a0a184a',
-    'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
-    'wbtc': '0x0000000000000000000000000000000000000000'
+    'margin_account': '0x4B186949F31FCA0aD08497Df9169a6bEbF0e26ef',
+    'orderbook': '0x05e6f736b5dedd60693fa806ce353156a1b73cf3',
+    'chog': '0x7E9953A11E606187be268C3A6Ba5f36635149C81',
+    'mon': '0x0000000000000000000000000000000000000000'
 }
 
 async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: bool = False, tx_options: TxOptions = TxOptions()):
@@ -203,7 +203,35 @@ async def main():
             print("Error: Must provide order IDs to cancel")
             return
         await cancel_orders(orderbook, args.order_ids)
-    
+
+    elif args.action == 'batch_update':
+        order_requests = [
+            OrderRequest(
+                market_address=ADDRESSES['orderbook'],
+                order_type='market',
+                side='buy',
+                size=args.buy_sizes[0],
+                min_amount_out=args.min_out or "0",
+                cloid="mm_1"
+            ),
+            OrderRequest(
+                market_address=ADDRESSES['orderbook'],
+                order_type='limit',
+                side='sell',
+                price=args.sell_prices[0],
+                size=args.sell_sizes[0],
+                cloid="mm_2"
+            ),
+            OrderRequest(
+                market_address=ADDRESSES['orderbook'],
+                order_type='market',
+                side='sell',
+                size=args.sell_sizes[1],
+                min_amount_out=args.min_out or "0",
+                cloid="mm_3"
+            )
+        ]
+        await batch_update(client, order_requests)
 
 async def get_l2_book(orderbook: Orderbook):
     return await orderbook.fetch_orderbook()

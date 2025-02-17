@@ -21,9 +21,9 @@ from kuru_sdk.client import KuruClient
 # Network and contract configuration
 NETWORK_RPC = os.getenv("RPC_URL")  # Replace with your network RPC
 ADDRESSES = {
-    'margin_account': '0x33fa695D1B81b88638eEB0a1d69547Ca805b8949',
-    'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
-    'wbtc': '0x0000000000000000000000000000000000000000'
+    'margin_account': '0x4B186949F31FCA0aD08497Df9169a6bEbF0e26ef',
+    'chog': '0x7E9953A11E606187be268C3A6Ba5f36635149C81',
+    'mon': '0x0000000000000000000000000000000000000000'
 }
 WS_URL = "https://ws.staging.kuru.io"
 
@@ -36,9 +36,10 @@ async def main():
     )
     
     # Deposit 100 USDC
-    client.deposit(ADDRESSES['usdc'], 100000000000000000000000)
+    await client.deposit(ADDRESSES['mon'], 5000000000000000000)
 
-    print(await client.view_margin_balance(ADDRESSES['usdc']))
+
+    print(await client.view_margin_balance(ADDRESSES['mon']))
 
     ## Deposit 100 WBT
     # await client.deposit(ADDRESSES['wbtc'], 10000000000000)

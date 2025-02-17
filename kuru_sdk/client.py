@@ -110,7 +110,7 @@ class KuruClient:
   async def batch_orders(
       self,
       order_requests: List[OrderRequest],
-      tx_options: Optional[TxOptions]
+      tx_options: Optional[TxOptions] = TxOptions()
   ):
     market_address = order_requests[0].market_address
     if market_address not in self.order_executors:

@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kuru-sdk",
-    version="0.1.4",
+    version="0.1.5",
     author="Kuru Labs",
     author_email="tech@kurulabs.xyz",
     description="Python SDK for Kuru's Central Limit Orderbook (CLOB)",

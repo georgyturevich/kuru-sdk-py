@@ -17,8 +17,8 @@ class OrderRequest:
     price: Optional[str] = None  # Optional for market orders
     size: Optional[str] = None
     post_only: Optional[bool] = None
-    is_margin: Optional[bool] = None
-    fill_or_kill: Optional[bool] = None
+    is_margin: Optional[bool] = False
+    fill_or_kill: Optional[bool] = False
     min_amount_out: Optional[str] = None  # For market orders
     order_ids: Optional[List[int | str]] = None # For batch cancel
     cloid: Optional[str] = None
@@ -364,5 +364,3 @@ class OrderExecutor:
     def get_all_cancelled_orders(self) -> List[str]:
         """Get all cancelled orders"""
         return list(self.cancelled_orders.keys())
-    
-

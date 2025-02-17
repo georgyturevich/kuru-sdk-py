@@ -338,10 +338,17 @@ class Orderbook:
         size_normalized = float(size) * float(str(self.market_params.price_precision))
         min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
         
+        # Calculate value if quote asset is zero address and not margin
+        value = 0
+        if not is_margin and self.market_params.quote_asset == "0x0000000000000000000000000000000000000000":
+            value = int(float(size) * float(str(10 ** self.market_params.quote_asset_decimals)))
+            print(f"Value: {value}")
+        
         return await self._prepare_transaction(
             "placeAndExecuteMarketBuy",
             [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
-            tx_options
+            tx_options,
+            value=value
         )
 
     async def market_buy(
@@ -369,10 +376,17 @@ class Orderbook:
     ) -> Dict:
         size_normalized = float(size) * float(str(self.market_params.size_precision))
         min_amount_normalized = float(min_amount_out) * float(str(self.market_params.size_precision))
+        
+        # Calculate value if base asset is zero address and not margin
+        value = 0
+        if not is_margin and self.market_params.base_asset == "0x0000000000000000000000000000000000000000":
+            value = int(float(size) * float(str(10 ** self.market_params.base_asset_decimals)))
+        
         return await self._prepare_transaction(
             "placeAndExecuteMarketSell",
             [int(size_normalized), int(min_amount_normalized), is_margin, fill_or_kill],
-            tx_options
+            tx_options,
+            value=value
         )
 
     async def market_sell(
