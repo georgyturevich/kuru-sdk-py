@@ -112,6 +112,7 @@ class KuruClient:
   async def batch_orders(
       self,
       order_requests: List[OrderRequest],
+      is_cloid_required: bool = True,
       tx_options: Optional[TxOptions] = TxOptions()
   ):
     market_address = order_requests[0].market_address
@@ -129,7 +130,10 @@ class KuruClient:
       print(f"Connected to order executor for market: {market_address}")
 
     order_executor = self.order_executors[market_address]
-    order_requests_formatted = self.format_order_request_for_batch_orders(order_requests)
+    if is_cloid_required:
+      order_requests_formatted = self.format_order_request_for_batch_orders(order_requests)
+    else:
+      order_requests_formatted = order_requests
     tx_hash = await order_executor.batch_orders(order_requests_formatted, tx_options)
     print(f"Batch orders placed successfully with transaction hash: {tx_hash}")
     return tx_hash
