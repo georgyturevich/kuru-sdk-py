@@ -344,8 +344,8 @@ class OrderExecutor:
 
         # Store order mappings if cloid is provided
         tx_hash = f"0x{tx_hash}".lower()
-        if tx_hash and tx_options.cloid:
-            self._store_order_mapping(tx_options.cloid, tx_hash)
+        if tx_hash and order_requests[0].cloid:
+            self._store_order_mapping(order_requests[0].cloid, tx_hash)
         
         return tx_hash
     

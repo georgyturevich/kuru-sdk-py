@@ -174,7 +174,8 @@ class KuruClient:
       if order.order_type == 'cancel':
         new_order_ids = []
         for cloid in order.order_ids:
-          order_id = self.cloid_to_order_id[cloid]
+          market_address = order.market_address
+          order_id = self.order_executors[market_address].get_order_id_by_cloid(cloid)
           new_order_ids.append(order_id)
         order.order_ids = new_order_ids
 
