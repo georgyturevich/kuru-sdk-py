@@ -5,22 +5,7 @@ from .orderbook import Orderbook, TxOptions
 from .utils import decode_logs, get_order_id_from_receipt
 from typing import Dict, List, Optional, Literal
 from dataclasses import dataclass
-
-@dataclass
-class OrderRequest:
-    market_address: str
-    order_type: Literal["limit", "market", "cancel"]
-    side: Optional[Literal["buy", "sell"]] = None # optional for cancel orders
-    price: Optional[str] = None  # Optional for market orders
-    size: Optional[str] = None # optional for cancel orders
-    post_only: Optional[bool] = None 
-    is_margin: Optional[bool] = False 
-    fill_or_kill: Optional[bool] = False
-    min_amount_out: Optional[str] = None  # For market orders
-    cancel_order_ids: Optional[List[int | str]] = None # For batch cancel
-    cancel_cloids: Optional[List[str]] = None
-    cloid: Optional[str] = None
-    tick_normalization: Optional[str] = None
+from kuru_sdk.types import OrderRequest
 
 
 class ClientOrderExecutor:
@@ -32,6 +17,8 @@ class ClientOrderExecutor:
         self.orderbook = Orderbook(web3, contract_address, private_key)
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
+        self.cloid_to_order: Dict[str, OrderRequest] = {}
+
 
     async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
@@ -86,15 +73,7 @@ class ClientOrderExecutor:
                     )
 
             if order.order_type == "cancel":
-                if not (order.cancel_order_ids or order.cancel_cloids):
-                    raise ValueError("Either cancel_order_ids or cancel_cloids must be provided for cancel orders")
-                
-                if order.cancel_order_ids:
-                    print(f"Cancelling orders with IDs: {order.cancel_order_ids}")
-                    tx_hash = await self.orderbook.batch_orders(order_ids_to_cancel=order.cancel_order_ids, tx_options=tx_options)
-                elif order.cancel_cloids:
-                    order_ids = [self.cloid_to_order_id[cloid] for cloid in order.cancel_cloids]
-                    tx_hash = await self.orderbook.batch_orders(order_ids_to_cancel=order_ids, tx_options=tx_options)
+                tx_hash = await self.cancel_orders(cloids=[cloid], tx_options=tx_options)
 
             # Wait for the transaction receipt using the web3 instance from the orderbook
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
@@ -114,6 +93,25 @@ class ClientOrderExecutor:
         except Exception as e:
             print(f"Error placing order: {e}")
             raise
+        
+    async def cancel_orders(self, cloids: Optional[List[str]] = None, order_ids: Optional[List[int]] = None, tx_options: Optional[TxOptions] = TxOptions()) -> str:
+        """
+        Cancel orders with the given cloids or order_ids
+        """
+        if not (cloids or order_ids):
+            raise ValueError("Either cloids or order_ids must be provided for cancel orders")
+            
+        if cloids:
+            order_ids = []
+            for cloid in cloids:
+                if cloid in self.cloid_to_order_id:
+                    order_ids.append(self.cloid_to_order_id[cloid])
+                else:
+                    raise ValueError(f"Order ID not found for cloid: {cloid}")
+
+        tx_hash = await self.orderbook.batch_orders(order_ids_to_cancel=order_ids, tx_options=tx_options)
+        receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        return receipt.transactionHash.hex()
     
     async def batch_orders(
         self,
@@ -138,7 +136,11 @@ class ClientOrderExecutor:
                 if order.cancel_order_ids:
                     order_ids_to_cancel.extend(order.cancel_order_ids)
                 elif order.cancel_cloids:
-                    order_ids_to_cancel.extend([self.cloid_to_order_id[cloid] for cloid in order.cancel_cloids])
+                    for cloid in order.cancel_cloids:
+                        if cloid in self.cloid_to_order_id:
+                            order_ids_to_cancel.append(self.cloid_to_order_id[cloid])
+                        else:
+                            raise ValueError(f"Order ID not found for cloid: {cloid}")
                 continue
             
             if order.side == "buy":
@@ -174,15 +176,10 @@ class ClientOrderExecutor:
             raise Exception(f"Batch order failed: Transaction status {receipt.status}, receipt: {receipt}")
         
 
-
     def match_orders_with_events(self, orders: List[OrderRequest], events: List[OrderCreatedEvent]) -> List[OrderRequest]:
         """
         Match orders with events based the price and isBuy field
         """
-
-        print(f"Events: {events}")
-
-        print(f"Orders: {orders}")
 
         for order in orders:
             if order.order_type == "cancel" or order.order_type == "market":
@@ -190,3 +187,17 @@ class ClientOrderExecutor:
             for event in events:
                 if order.price * self.orderbook.market_params.price_precision == event.price and order.side == ("buy" if event.is_buy else "sell"):
                     self.cloid_to_order_id[order.cloid] = event.order_id
+
+    ## Websocket handlers
+    async def on_order_created_handler(self, payload):
+        print(f"Order created: {payload}")
+
+    async def on_trade_handler(self, payload):
+        print(f"Trade: {payload}")
+        
+    async def on_order_cancelled_handler(self, payload):
+        print(f"Order cancelled: {payload}")
+        
+        
+        
+        

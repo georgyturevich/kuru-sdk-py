@@ -1,7 +1,5 @@
 import sys
 from pathlib import Path
-from typing import List, Optional
-
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
@@ -71,7 +69,7 @@ async def place_batch_orders(client: ClientOrderExecutor):
             market_address=ADDRESSES['orderbook'],
             order_type='limit',
             side='buy',
-            price=0.0000002,
+            price=0.0000003,
             size=10000,
             cloid="mm_2"
         )
@@ -79,7 +77,6 @@ async def place_batch_orders(client: ClientOrderExecutor):
     tx_hash = await client.batch_orders(orders)
     print(f"Batch order transaction hash: {tx_hash}")
     
-
 
 async def main():
     client = ClientOrderExecutor(
@@ -89,9 +86,10 @@ async def main():
     )
 
     # await place_limit_buy(client, 0.0000002, 10000 )
-    await place_batch_orders(client)
+    tx_hash = await place_batch_orders(client)
+    cancel_tx_hash = await client.cancel_orders(cloids=["mm_1"], tx_options=TxOptions())
+    print(f"Cancel transaction hash: {cancel_tx_hash}")
+
     
-
-
 if __name__ == "__main__":
     asyncio.run(main())

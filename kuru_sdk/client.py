@@ -4,7 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
@@ -24,15 +23,13 @@ abi_path = Path(__file__).parent / 'abi' / 'ierc20.json'
 with open(abi_path, 'r') as f:
     ERC20_ABI = json.load(f)
 
-
-
 class KuruClient:
   def __init__(
     self, 
     network_rpc: str, 
     margin_account_address: str, 
-    websocket_url: str,
     private_key: str, 
+    websocket_url: Optional[str] = None,
     on_order_created: Optional[callable] = None,
     on_trade: Optional[callable] = None,
     on_order_cancelled: Optional[callable] = None
@@ -99,8 +96,9 @@ class KuruClient:
         self.on_trade, 
         self.on_order_cancelled
       )
-      await self.order_executors[market_address].connect()
-      print(f"Connected to order executor for market: {market_address}")
+      if self.websocket_url:
+        await self.order_executors[market_address].connect()
+        print(f"Connected to order executor for market: {market_address}")
 
     order_executor = self.order_executors[market_address]
     tx_hash = await order_executor.place_order(order_request, tx_options)
@@ -126,8 +124,9 @@ class KuruClient:
         self.on_trade, 
         self.on_order_cancelled
       )
-      await self.order_executors[market_address].connect()
-      print(f"Connected to order executor for market: {market_address}")
+      if self.websocket_url:
+        await self.order_executors[market_address].connect()
+        print(f"Connected to order executor for market: {market_address}")
 
     order_executor = self.order_executors[market_address]
     if is_cloid_required:
@@ -152,8 +151,8 @@ class KuruClient:
     print(f"Cancelled orders with tx hash: {tx_hash}")
     return tx_hash
 
-  def withdraw(self, token_address: str, amount: int):
-    withdraw_tx = self.margin_account.withdraw(token_address, amount, self.user_address)
+  async def withdraw(self, token_address: str, amount: int):
+    withdraw_tx = await self.margin_account.withdraw(token_address, amount, self.user_address)
     print(f"Withdraw transaction hash: {withdraw_tx}")
 
   async def view_margin_balance(self, token_address):

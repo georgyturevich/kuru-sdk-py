@@ -1,7 +1,7 @@
 
 from dataclasses import dataclass
 from kuru_sdk.orderbook import Orderbook
-
+from kuru_sdk.types import OrderCreatedEvent
 def get_order_id_from_receipt(orderbook: Orderbook, receipt) -> int | None:
     """
     Get the order id by decoding the OrderCreated event from the transaction receipt logs.
@@ -32,14 +32,6 @@ def get_order_id_from_receipt(orderbook: Orderbook, receipt) -> int | None:
         # Handle potential errors during decoding (e.g., event not found in ABI)
         print(f"Error decoding logs from receipt: {e}")
         return None
-
-
-@dataclass
-class OrderCreatedEvent:
-    order_id: int
-    price: int
-    size: int
-    is_buy: bool
 
 
 def decode_logs(orderbook: Orderbook, receipt) -> list[OrderCreatedEvent]:

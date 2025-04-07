@@ -37,9 +37,12 @@ async def main():
     
     # Deposit 100 USDC
     await client.deposit(ADDRESSES['mon'], 5000000000000000000)
+    print(await client.view_margin_balance(ADDRESSES['mon']))
 
+    # await client.withdraw(ADDRESSES['mon'], 5000000000000000000)
 
     print(await client.view_margin_balance(ADDRESSES['mon']))
+
 
     ## Deposit 100 WBT
     # await client.deposit(ADDRESSES['wbtc'], 10000000000000)

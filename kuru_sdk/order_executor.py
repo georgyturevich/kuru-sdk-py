@@ -13,14 +13,15 @@ from .orderbook import Orderbook, TxOptions
 class OrderRequest:
     market_address: str
     order_type: Literal["limit", "market", "cancel"]
-    side: Optional[Literal["buy", "sell"]] = None
+    side: Literal["buy", "sell"]
     price: Optional[str] = None  # Optional for market orders
     size: Optional[str] = None
     post_only: Optional[bool] = None
     is_margin: Optional[bool] = False
     fill_or_kill: Optional[bool] = False
     min_amount_out: Optional[str] = None  # For market orders
-    order_ids: Optional[List[int | str]] = None # For batch cancel
+    cancel_order_ids: Optional[List[int | str]] = None # For batch cancel
+    cancel_cloids: Optional[List[str]] = None
     cloid: Optional[str] = None
     tick_normalization: Optional[str] = None
 
@@ -112,7 +113,6 @@ class OrderExecutor:
         """
         self.orderbook = Orderbook(web3, contract_address, private_key)
         self.websocket_url = f"{websocket_url}?marketAddress={contract_address.lower()}"
-
         
         # Initialize socket.io client
         self.sio = socketio.AsyncClient()

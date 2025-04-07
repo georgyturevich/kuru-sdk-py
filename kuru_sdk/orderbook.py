@@ -6,140 +6,8 @@ from decimal import Decimal
 import json
 import os
 
+from .types import MarketParams, TxOptions, L2Book, FormattedL2Book, OrderPriceSize, VaultParams
 
-@dataclass
-class MarketParams:
-    price_precision: int
-    size_precision: int
-    base_asset: str
-    base_asset_decimals: int
-    quote_asset: str
-    quote_asset_decimals: int
-    tick_size: int
-    min_size: int
-    max_size: int
-    taker_fee_bps: int
-    maker_fee_bps: int
-
-@dataclass
-class TxOptions:
-    gas_limit: Optional[int] = None
-    gas_price: Optional[int] = None  # Used as maxFeePerGas
-    max_priority_fee_per_gas: Optional[int] = None
-    nonce: Optional[int] = None
-
-
-@dataclass
-class VaultParams:
-    kuru_amm_vault: str
-    vault_best_bid: int
-    bid_partially_filled_size: int
-    vault_best_ask: int
-    ask_partially_filled_size: int
-    vault_bid_order_size: int
-    vault_ask_order_size: int
-    spread: int
-
-@dataclass
-class OrderPriceSize:
-    price: float
-    size: float
-
-@dataclass
-class L2Book:
-    block_num: int
-    buy_orders: List[OrderPriceSize]
-    sell_orders: List[OrderPriceSize]
-    amm_buy_orders: List[OrderPriceSize]
-    amm_sell_orders: List[OrderPriceSize]
-    vault_params: VaultParams
-
-    def __str__(self) -> str:
-        # Combine regular and AMM orders
-        combined_buys = {}
-        combined_sells = {}
-
-        # Process regular orders
-        for order in self.buy_orders:
-            combined_buys[order.price] = order.size
-        for order in self.sell_orders:
-            combined_sells[order.price] = order.size
-
-        # Add AMM orders, combining sizes for matching prices
-        for order in self.amm_buy_orders:
-            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
-        for order in self.amm_sell_orders:
-            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
-
-        # Convert to sorted lists (sells in descending order)
-        sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)[:10]  # Top 10 bids
-        sorted_sells = sorted(combined_sells.items(), key=lambda x: x[0], reverse=True)[-10:]  # Last 10 asks
-
-        # Format the table
-        header = f"{'Price':>12} | {'Size':>12}"
-        separator = "-" * 27
-        rows = []
-
-        # Add sell orders (highest to lowest)
-        for price, size in sorted_sells:
-            rows.append(f"{price:>12.8f} | {size:>12.8f}")
-
-        # Add separator between sells and buys
-        rows.append(separator)
-
-        # Add buy orders (highest to lowest)
-        for price, size in sorted_buys:
-            rows.append(f"{price:>12.8f} | {size:>12.8f}")
-
-        # Combine all parts
-        return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
-    
-    def to_formatted_l2_book(self) -> 'FormattedL2Book':
-        # combine the orderbook and amm orderbook similar to the __str__ method
-        combined_buys = {}
-        combined_sells = {}
-
-        for order in self.buy_orders:
-            combined_buys[order.price] = order.size
-        for order in self.sell_orders:
-            combined_sells[order.price] = order.size
-
-        for order in self.amm_buy_orders:
-            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
-        for order in self.amm_sell_orders:
-            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
-        
-        return FormattedL2Book(
-            block_num=self.block_num,
-            buy_orders=combined_buys,
-            sell_orders=combined_sells
-        )
-
-@dataclass
-class FormattedL2Book:
-    block_num: int
-    buy_orders: List[OrderPriceSize]
-    sell_orders: List[OrderPriceSize]
-
-    def __str__(self) -> str:
-        # Format the table
-        header = f"{'Price':>12} | {'Size':>12}"
-        separator = "-" * 27
-        rows = []
-
-        # Add sell orders (highest to lowest)
-        for order in sorted(self.sell_orders, key=lambda x: x.price):
-            rows.append(f"{order.price:>12.8f} | {order.size:>12.8f}")
-
-        # Add separator between sells and buys
-        rows.append(separator)
-
-        # Add buy orders (highest to lowest)
-        for order in sorted(self.buy_orders, key=lambda x: x.price, reverse=True):
-            rows.append(f"{order.price:>12.8f} | {order.size:>12.8f}")
-
-        # Combine all parts
-        return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
 
 class Orderbook:
     def __init__(
@@ -149,8 +17,10 @@ class Orderbook:
         private_key: str
     ):
         """
-        Initialize the Orderbook SDK
+        Orderbook class
+        Functions to interact with the Orderbook contract
         
+        Initialize the Orderbook SDK
         Args:
             web3: Web3 instance
             contract_address: Address of the deployed Orderbook contract
@@ -274,8 +144,9 @@ class Orderbook:
             # round down to the nearest tick
             price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
         else:
-            # no normalization
-            price = price
+            # no normalization then clip the price if it's not divisible by the tick size 
+            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
+
 
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
         return await self._prepare_transaction(
@@ -467,12 +338,12 @@ class Orderbook:
 
     async def batch_orders(
         self,
-        buy_prices: Optional[List[str]] = None,
-        buy_sizes: Optional[List[str]] = None,
-        sell_prices: Optional[List[str]] = None,
-        sell_sizes: Optional[List[str]] = None,
-        order_ids_to_cancel: Optional[List[str]] = None,
-        post_only: Optional[bool] = None,
+        buy_prices: Optional[List[str]] = [],
+        buy_sizes: Optional[List[str]] = [],
+        sell_prices: Optional[List[str]] = [],
+        sell_sizes: Optional[List[str]] = [],
+        order_ids_to_cancel: Optional[List[str]] = [],
+        post_only: Optional[bool] = False,
         tx_options: TxOptions = TxOptions()
     ) -> str:
         tx = await self.prepare_batch_orders(
