@@ -11,11 +11,11 @@ class KuruAPI:
     return response.json()
   
   def get_active_orders(self, user_address: str) -> List[Order]:
-    response = requests.get(f"{self.url}/orders/active/{user_address}")
+    response = requests.get(f"{self.url}/{user_address}/user/orders/active")
     return response.json()
   
   def get_order_history(self, user_address: str) -> List[Order]:
-    response = requests.get(f"{self.url}/{user_address}/orders/active")
+    response = requests.get(f"{self.url}/orders/user/{user_address}")
     return response.json()
   
   def get_trades(self, market_address: str, user_address: str, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:

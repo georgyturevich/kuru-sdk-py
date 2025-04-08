@@ -51,19 +51,19 @@ class OrderCreatedEvent:
 
 @dataclass
 class OrderRequest:
-    market_address: str
-    order_type: Literal["limit", "market", "cancel"]
+    market_address: str # Market address
+    order_type: Literal["limit", "market", "cancel"] # Order type
+    cloid: Optional[str] = None # Client order id for internal reference
     side: Optional[Literal["buy", "sell"]] = None # optional for cancel orders
     price: Optional[str] = None  # Optional for market orders
     size: Optional[str] = None # optional for cancel orders
-    post_only: Optional[bool] = None 
-    is_margin: Optional[bool] = False 
-    fill_or_kill: Optional[bool] = False
-    min_amount_out: Optional[str] = None  # For market orders
+    post_only: Optional[bool] = False # Post only for limit orders
+    is_margin: Optional[bool] = True # Use funds from margin account
+    fill_or_kill: Optional[bool] = False # Fill or kill for market orders
+    min_amount_out: Optional[str] = None  # For market orders only
     cancel_order_ids: Optional[List[int | str]] = None # For batch cancel
-    cancel_cloids: Optional[List[str]] = None
-    cloid: Optional[str] = None
-    tick_normalization: Optional[str] = None
+    cancel_cloids: Optional[List[str]] = None # For batch cancel
+    tick_normalization: Optional[Literal["round_up", "round_down"]] = "round_down" # rounds up or down to the nearest tick size
 
 @dataclass
 class Order:
@@ -102,11 +102,11 @@ class L2Book:
         for order in self.sell_orders:
             combined_sells[order.price] = order.size
 
-        # Add AMM orders, combining sizes for matching prices
-        for order in self.amm_buy_orders:
-            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
-        for order in self.amm_sell_orders:
-            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+        # # Add AMM orders, combining sizes for matching prices
+        # for order in self.amm_buy_orders:
+        #     combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        # for order in self.amm_sell_orders:
+        #     combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
 
         # Convert to sorted lists (sells in descending order)
         sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)[:10]  # Top 10 bids
@@ -141,10 +141,11 @@ class L2Book:
         for order in self.sell_orders:
             combined_sells[order.price] = order.size
 
-        for order in self.amm_buy_orders:
-            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
-        for order in self.amm_sell_orders:
-            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+        # Not adding AMM orders to 
+        # for order in self.amm_buy_orders:
+        #     combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        # for order in self.amm_sell_orders:
+        #     combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
         
         return FormattedL2Book(
             block_num=self.block_num,

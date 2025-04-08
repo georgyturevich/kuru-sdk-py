@@ -1,59 +1,48 @@
 
-from dataclasses import dataclass
-from kuru_sdk.orderbook import Orderbook
+import re
 from kuru_sdk.types import OrderCreatedEvent
-def get_order_id_from_receipt(orderbook: Orderbook, receipt) -> int | None:
+
+
+error_codes = {
+    "bb55fd27": "Insufficient Liquidity",
+    "ff633a38": "Length Mismatch", 
+    "fd993161": "Insufficient Native Asset",
+    "ead59376": "Native Asset Not Required",
+    "70d7ec56": "Native Asset Transfer Failed",
+    "829f7240": "Order Already Filled Or Cancelled",
+    "06e6da4d": "Post Only Error",
+    "91f53656": "Price Error",
+    "0a5c4f1f": "Size Error",
+    "8199f5f3": "Slippage Exceeded",
+    "272d3bf7": "Tick Size Error",
+    "0b252431": "Too Much Size Filled",
+    "7939f424": "Transfer From Failed",
+    "f4d678b8": "Insufficient Balance",
+    "cd41a9e3": "Native Asset Mismatch",
+    "e84c4d58": "Only Router Allowed",
+    "e8430787": "Only Verified Markets Allowed",
+    "8579befe": "Zero Address Not Allowed",
+    "130e7978": "Base And Quote Asset Same",
+    "9db8d5b1": "Invalid Market",
+    "d09b273e": "No Markets Passed",
+    "d226f9d4": "Insufficient Liquidity Minted",
+    "b9873846": "Insufficient Quote Token",
+    "6a2628d9": "New Size Exceeds Partially Filled Size"
+}
+
+def get_error_message(error: str | tuple) -> str:
     """
-    Get the order id by decoding the OrderCreated event from the transaction receipt logs.
-
-    Args:
-        orderbook: The Orderbook instance containing the contract object.
-        receipt: The transaction receipt obtained from web3.eth.wait_for_transaction_receipt.
-
-    Returns:
-        The order ID if an OrderCreated event is found, otherwise None.
+    Parse error code and return corresponding error message.
+    Handles both string error codes and tuple error codes like ('0x91f53656', '0x91f53656')
     """
-    # Assuming the event name in your contract is 'OrderCreated'
-    # Access the contract instance from the orderbook
-    contract = orderbook.contract
-
-    try:
-        # Process the receipt to find 'OrderCreated' events
-        decoded_logs = contract.events.OrderCreated().process_receipt(receipt)
-
-        if decoded_logs:
-            # Assuming the first OrderCreated event contains the relevant orderId
-            order_id = decoded_logs[0]['args']['orderId']
-            return order_id
-        else:
-            print("No OrderCreated event found in the transaction receipt.")
-            return None
-    except Exception as e:
-        # Handle potential errors during decoding (e.g., event not found in ABI)
-        print(f"Error decoding logs from receipt: {e}")
-        return None
-
-
-def decode_logs(orderbook: Orderbook, receipt) -> list[OrderCreatedEvent]:
-    contract = orderbook.contract
-    tx_logs = receipt.get('logs')
-    order_created_events = []
-    for log in tx_logs:
-        try:
-            order_created_event = contract.events.OrderCreated().process_log(log)
-            print(f"Order created event: {order_created_event}")
-            if order_created_event:
-              order_created_event = OrderCreatedEvent(
-                  order_id=order_created_event['args']['orderId'],
-                  price=order_created_event['args']['price'],
-                  size=order_created_event['args']['size'],
-                  is_buy=order_created_event['args']['isBuy']
-                  )
-              order_created_events.append(order_created_event)
-        except Exception as e:
-            print(f"Error decoding logs for order created event: {e}")
-            continue
-
-    return order_created_events
-
-
+    
+    # Handle tuple error format
+    if isinstance(error, tuple):
+        error = error[0]  # Take first element of tuple
+    else:
+        # Use regex to extract error code by removing parentheses, quotes and taking first item before comma
+        error = re.sub(r"[()'\s]", "", error).split(',')[0]
+    # Remove '0x' prefix if present
+    error = error.replace('0x', '')
+    
+    return error_codes.get(error, f"Unknown error: {error}")

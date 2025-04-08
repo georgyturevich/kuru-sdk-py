@@ -6,7 +6,7 @@ project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
 
 from kuru_sdk.client import KuruClient
-from kuru_sdk.order_executor import OrderRequest
+from kuru_sdk.types import OrderRequest
 
 from kuru_sdk.client_order_executor import ClientOrderExecutor
 
@@ -72,6 +72,14 @@ async def place_batch_orders(client: ClientOrderExecutor):
             price=0.0000003,
             size=10000,
             cloid="mm_2"
+        ),
+        OrderRequest(
+            market_address=ADDRESSES['orderbook'],
+            order_type='limit',
+            side='sell',
+            price=0.0002,
+            size=10000,
+            cloid="mm_3"
         )
     ]
     tx_hash = await client.batch_orders(orders)
@@ -87,8 +95,8 @@ async def main():
 
     # await place_limit_buy(client, 0.0000002, 10000 )
     tx_hash = await place_batch_orders(client)
-    cancel_tx_hash = await client.cancel_orders(cloids=["mm_1"], tx_options=TxOptions())
-    print(f"Cancel transaction hash: {cancel_tx_hash}")
+    # cancel_tx_hash = await client.cancel_orders(cloids=["mm_1"], tx_options=TxOptions())
+    # print(f"Cancel transaction hash: {cancel_tx_hash}")
 
     
 if __name__ == "__main__":

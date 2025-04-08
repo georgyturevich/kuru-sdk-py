@@ -6,7 +6,9 @@ from decimal import Decimal
 import json
 import os
 
-from .types import MarketParams, TxOptions, L2Book, FormattedL2Book, OrderPriceSize, VaultParams
+from kuru_sdk.utils import get_error_message
+
+from .types import MarketParams, OrderCreatedEvent, TxOptions, L2Book, FormattedL2Book, OrderPriceSize, VaultParams
 
 
 class Orderbook:
@@ -137,18 +139,27 @@ class Orderbook:
         tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
+        
+        # price * price precision % tick size 
+        
+
+        print(f"Price: {price}, Size: {size}")
+        price_normalized, size_normalized = self.normalize_with_precision(price, size)
+
+        price_mod = price_normalized % self.market_params.tick_size
+
         if tick_normalization == "round_up":
             # round up to the nearest tick
-            price = self.market_params.tick_size * ceil(float(price) / self.market_params.tick_size)
+            if price_mod > 0:
+                price_normalized = price_normalized + (self.market_params.tick_size - price_mod)
         elif tick_normalization == "round_down":
             # round down to the nearest tick
-            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
+            price_normalized = price_normalized - price_mod
         else:
             # no normalization then clip the price if it's not divisible by the tick size 
-            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
+            price_normalized = price_normalized - price_mod
 
-
-        price_normalized, size_normalized = self.normalize_with_precision(price, size)
+        print(f"Price normalized: {price_normalized}, Size normalized: {size_normalized}")
         return await self._prepare_transaction(
             "addBuyOrder",
             [price_normalized, size_normalized, post_only],
@@ -163,8 +174,11 @@ class Orderbook:
         tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_buy_order(price, size, post_only, tick_normalization, tx_options)
-        return await self._execute_transaction(tx)
+        try:
+            tx = await self.prepare_buy_order(price, size, post_only, tick_normalization, tx_options)
+            return await self._execute_transaction(tx)
+        except Exception as e:
+            raise Exception(f"Error adding buy order: {get_error_message(str(e))}")
 
     async def prepare_sell_order(
         self,
@@ -457,6 +471,58 @@ class Orderbook:
             amm_sell_orders=amm_sell_orders,
             vault_params=vault_params
         )
+    
+    def get_order_id_from_receipt(self, receipt) -> int | None:
+        """
+        Get the order id by decoding the OrderCreated event from the transaction receipt logs.
+
+        Args:
+            orderbook: The Orderbook instance containing the contract object.
+            receipt: The transaction receipt obtained from web3.eth.wait_for_transaction_receipt.
+
+        Returns:
+                The order ID if an OrderCreated event is found, otherwise None.
+            """
+        contract = self.contract
+
+        try:
+            # Process the receipt to find 'OrderCreated' events
+            decoded_logs = contract.events.OrderCreated().process_receipt(receipt)
+
+            if decoded_logs:
+                # Assuming the first OrderCreated event contains the relevant orderId
+                order_id = decoded_logs[0]['args']['orderId']
+                return order_id
+            else:
+                print("No OrderCreated event found in the transaction receipt.")
+                return None
+        except Exception as e:
+            # Handle potential errors during decoding (e.g., event not found in ABI)
+            print(f"Error decoding logs from receipt: {e}")
+            return None
+
+
+    def decode_logs(self, receipt) -> list[OrderCreatedEvent]:
+        tx_logs = receipt.get('logs')
+        order_created_events = []
+        for log in tx_logs:
+            try:
+                order_created_event = self.contract.events.OrderCreated().process_log(log)
+                print(f"Order created event: {order_created_event}")
+                if order_created_event:
+                    order_created_event = OrderCreatedEvent(
+                        order_id=order_created_event['args']['orderId'],
+                    price=order_created_event['args']['price'],
+                    size=order_created_event['args']['size'],
+                    is_buy=order_created_event['args']['isBuy']
+                    )
+                order_created_events.append(order_created_event)
+            except Exception as e:
+                print(f"Error decoding logs for order created event: {e}")
+                continue
+
+        return order_created_events
+
 
     async def _get_amm_prices(self) -> Tuple[List[OrderPriceSize], List[OrderPriceSize]]:
         """

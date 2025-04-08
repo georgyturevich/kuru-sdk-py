@@ -19,7 +19,7 @@ load_dotenv()
 from kuru_sdk.client import KuruClient
 
 # Network and contract configuration
-NETWORK_RPC = os.getenv("RPC_URL")  # Replace with your network RPC
+NETWORK_RPC = os.getenv("RPC_URL")
 ADDRESSES = {
     'margin_account': '0x4B186949F31FCA0aD08497Df9169a6bEbF0e26ef',
     'chog': '0x7E9953A11E606187be268C3A6Ba5f36635149C81',
@@ -36,12 +36,12 @@ async def main():
     )
     
     # Deposit 100 USDC
-    await client.deposit(ADDRESSES['mon'], 5000000000000000000)
+    # await client.deposit(ADDRESSES['mon'], 5000000000000000000)
     print(await client.view_margin_balance(ADDRESSES['mon']))
 
     # await client.withdraw(ADDRESSES['mon'], 5000000000000000000)
 
-    print(await client.view_margin_balance(ADDRESSES['mon']))
+    # print(await client.view_margin_balance(ADDRESSES['mon']))
 
 
     ## Deposit 100 WBT

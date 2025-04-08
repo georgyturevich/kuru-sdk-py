@@ -47,9 +47,9 @@ async def place_limit_buy(client: KuruClient, price: str, size: str, post_only: 
         print(f"Placing limit buy order: {size} units at {price}")
         tx_hash = await client.create_order(order)
         print(f"Transaction hash: {tx_hash}")
-        tx_hash = await client.create_order(order)
-        print(f"Transaction hash: {tx_hash}")
-        await asyncio.sleep(10)
+        # tx_hash = await client.create_order(order)
+        # print(f"Transaction hash: {tx_hash}")
+        # await asyncio.sleep(10)
         return tx_hash
     except Exception as e:
         print(f"Error placing limit buy order: {str(e)}")

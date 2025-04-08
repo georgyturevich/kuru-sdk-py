@@ -1,23 +1,46 @@
 from web3 import Web3
 
-from kuru_sdk.utils import OrderCreatedEvent
+from kuru_sdk.websocket_handler import WebSocketHandler
 from .orderbook import Orderbook, TxOptions
-from .utils import decode_logs, get_order_id_from_receipt
 from typing import Dict, List, Optional, Literal
 from dataclasses import dataclass
-from kuru_sdk.types import OrderRequest
-
+from kuru_sdk.types import Order, OrderCreatedEvent, OrderRequest
+from kuru_sdk.api import KuruAPI
 
 class ClientOrderExecutor:
     def __init__(self,
                  web3: Web3,
                  contract_address: str,
-                 private_key: str):
+                 private_key: str,
+                 websocket_url: Optional[str] = None,
+                 on_order_created: Optional[callable] = None,
+                 on_trade: Optional[callable] = None,
+                 on_order_cancelled: Optional[callable] = None):
+        
         self.web3 = web3
         self.orderbook = Orderbook(web3, contract_address, private_key)
+
+        if websocket_url:
+            self.websocket_handler = WebSocketHandler(
+                websocket_url=websocket_url,
+                on_order_created=on_order_created,
+                on_trade=on_trade,
+                on_order_cancelled=on_order_cancelled
+            )
+
+        self.wallet_address = self.web3.eth.account.from_key(private_key).address
+        
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
         self.cloid_to_order: Dict[str, OrderRequest] = {}
+
+    async def connect(self):
+        if self.websocket_handler:
+            await self.websocket_handler.connect()
+
+    async def disconnect(self):
+        if self.websocket_handler:
+            await self.websocket_handler.disconnect()
 
 
     async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
@@ -31,8 +54,11 @@ class ClientOrderExecutor:
         try:
             tx_hash = None
             if order.order_type == "limit":
+
                 if not order.price:
                     raise ValueError("Price is required for limit orders")
+                if not order.size:
+                    raise ValueError("Size is required for limit orders")
                 
                 if order.side == "buy":
                     print(f"Adding buy order with price: {order.price}, size: {order.size}, post_only: {order.post_only}, tx_options: {tx_options}")
@@ -54,6 +80,8 @@ class ClientOrderExecutor:
             else:  # market
                 if not order.min_amount_out:
                     raise ValueError("min_amount_out is required for market orders")
+                if not order.size:
+                    raise ValueError("Size is required for market orders")
                 
                 if order.side == "buy":
                     tx_hash = await self.orderbook.market_buy(
@@ -81,7 +109,7 @@ class ClientOrderExecutor:
 
             if receipt.status == 1:
                 if cloid:
-                    order_id = get_order_id_from_receipt(self.orderbook, receipt)
+                    order_id = self.orderbook.get_order_id_from_receipt(receipt)
                     print(f"Order ID: {order_id}")
                     if order_id:
                         self.cloid_to_order_id[cloid] = order_id
@@ -167,7 +195,7 @@ class ClientOrderExecutor:
         print(f"Batch order receipt: {receipt}")
 
         if receipt.status == 1:
-            order_created_events = decode_logs(self.orderbook, receipt)
+            order_created_events = self.orderbook.decode_logs(receipt)
             self.match_orders_with_events(orders, order_created_events)
             print(f"Transaction successful for batch orders, tx_hash: {receipt.transactionHash.hex()}")
             print(f"Order IDs: {self.cloid_to_order_id}")
@@ -175,6 +203,9 @@ class ClientOrderExecutor:
         else:
             raise Exception(f"Batch order failed: Transaction status {receipt.status}, receipt: {receipt}")
         
+
+    def get_order_id_by_cloid(self, cloid: str) -> int:
+        return self.cloid_to_order_id[cloid]
 
     def match_orders_with_events(self, orders: List[OrderRequest], events: List[OrderCreatedEvent]) -> List[OrderRequest]:
         """
@@ -197,7 +228,3 @@ class ClientOrderExecutor:
         
     async def on_order_cancelled_handler(self, payload):
         print(f"Order cancelled: {payload}")
-        
-        
-        
-        

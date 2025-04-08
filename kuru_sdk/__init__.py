@@ -1,6 +1,6 @@
 from .orderbook import Orderbook, TxOptions, MarketParams
 from .margin import MarginAccount
-from .order_executor import OrderExecutor, OrderRequest, OrderCreatedEvent, TradeEvent
+
 
 __version__ = "0.1.0"
 
