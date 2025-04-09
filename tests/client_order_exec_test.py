@@ -17,6 +17,8 @@ import json
 import argparse
 import asyncio
 from dotenv import load_dotenv
+import signal
+
 load_dotenv()
 
 # Network and contract configuration
@@ -87,17 +89,60 @@ async def place_batch_orders(client: ClientOrderExecutor):
     
 
 async def main():
+    # Define shutdown signal
+    shutdown_event = asyncio.Future()
+
     client = ClientOrderExecutor(
         web3=Web3(Web3.HTTPProvider(NETWORK_RPC)),
         contract_address=ADDRESSES['orderbook'],
-        private_key=os.getenv("PK")
+        private_key=os.getenv("PK"),
+        websocket_url="wss://ws.testnet.kuru.io"
     )
 
-    # await place_limit_buy(client, 0.0000002, 10000 )
-    tx_hash = await place_batch_orders(client)
-    # cancel_tx_hash = await client.cancel_orders(cloids=["mm_1"], tx_options=TxOptions())
-    # print(f"Cancel transaction hash: {cancel_tx_hash}")
+    async def shutdown(sig): 
+        print(f"\nReceived exit signal {sig.name}...")
+        print("Disconnecting client...")
+        try:
+            await client.disconnect()
+        except Exception as e:
+            print(f"Error during disconnect: {e}")
+        finally:
+            print("Client disconnected.")
+            shutdown_event.set_result(True)
+            # Optional: Clean up signal handlers
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.remove_signal_handler(sig)
 
+    # Add signal handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
+
+    try:
+        print("Connecting client...")
+        await client.connect()
+        print("Client connected.")
+
+        await place_limit_buy(client, 0.0000002, 10000 )
+        # tx_hash = await place_batch_orders(client)
+        # cancel_tx_hash = await client.cancel_orders(cloids=["mm_1"], tx_options=TxOptions())
+        # print(f"Cancel transaction hash: {cancel_tx_hash}")
+
+        print("Order placed. Running indefinitely. Press Ctrl+C to exit.")
+        await shutdown_event # Wait until shutdown signal is received
     
+    except asyncio.CancelledError:
+        print("Main task cancelled.")
+    finally:
+        # Ensure disconnect is called even if there's an error before shutdown_event is awaited
+        if not shutdown_event.done():
+            print("Performing cleanup due to unexpected exit...")
+            await client.disconnect()
+            print("Client disconnected.")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nKeyboardInterrupt caught in __main__. Exiting gracefully...")

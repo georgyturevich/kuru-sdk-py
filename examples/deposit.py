@@ -16,8 +16,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from kuru_sdk.client import KuruClient
-
 # Network and contract configuration
 NETWORK_RPC = os.getenv("RPC_URL")
 ADDRESSES = {
@@ -28,27 +26,27 @@ ADDRESSES = {
 WS_URL = "https://ws.testnet.kuru.io"
 
 async def main():
-    client = KuruClient(
-        network_rpc=NETWORK_RPC,
-        margin_account_address=ADDRESSES['margin_account'],
-        websocket_url=WS_URL,
+    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
+    margin_account = MarginAccount(
+        web3=web3,
+        contract_address=ADDRESSES['margin_account'],
         private_key=os.getenv('PK')
     )
+
+    wallet_address = web3.eth.account.from_key(os.getenv('PK')).address
+
+
+    await margin_account.deposit(
+        token=ADDRESSES['chog'],
+        amount=10000000000000000000
+    )
+
+    balance = await margin_account.get_balance(
+        user_address=wallet_address,
+        token=ADDRESSES['mon']
+    )
+    print(f"Balance: {balance}")
     
-    # Deposit 100 USDC
-    # await client.deposit(ADDRESSES['mon'], 5000000000000000000)
-    print(await client.view_margin_balance(ADDRESSES['mon']))
-
-    # await client.withdraw(ADDRESSES['mon'], 5000000000000000000)
-
-    # print(await client.view_margin_balance(ADDRESSES['mon']))
-
-
-    ## Deposit 100 WBT
-    # await client.deposit(ADDRESSES['wbtc'], 10000000000000)
-
-    # Withdraw 100 USDC
-    # client.withdraw(ADDRESSES['usdc'], 100000000000000000000000)
 
 if __name__ == "__main__":
     asyncio.run(main())

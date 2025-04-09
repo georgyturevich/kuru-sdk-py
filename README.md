@@ -65,16 +65,26 @@ ADDRESSES = {
 }
 
 async def main():
-    client = KuruClient(
-        network_rpc=NETWORK_RPC,
-        margin_account_address=ADDRESSES['margin_account'],
+    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
+    margin_account = MarginAccount(
+        web3=web3,
+        contract_address=ADDRESSES['margin_account'],
         private_key=os.getenv('PK')
     )
     
-    # Deposit 100 USDC
-    await client.deposit(ADDRESSES['usdc'], 100000000000000000000000)
+    wallet_address = web3.eth.account.from_key(os.getenv('PK')).address
 
-    print(await client.view_margin_balance(ADDRESSES['usdc']))
+    # deposit 10 mon
+    await margin_account.deposit(
+        token=ADDRESSES['mon'],
+        amount=10000000000000000000
+    )
+
+    balance = await margin_account.get_balance(
+        user_address=wallet_address,
+        token=ADDRESSES['mon']
+    )
+    print(f"Balance: {balance}")
 
 
 if __name__ == "__main__":
@@ -87,6 +97,13 @@ Here's a complete example showing how to place orders with different transaction
 ### Placing single order
 ```python
 async def main():
+
+    client = ClientOrderExecutor(
+        web3=Web3(Web3.HTTPProvider(NETWORK_RPC)),
+        contract_address=ADDRESSES['orderbook'],
+        private_key=os.getenv("PK"),
+        websocket_url="wss://ws.testnet.kuru.io"
+    )
 
     # Limit buy
     order = OrderRequest(
@@ -133,7 +150,7 @@ async def main():
     )
 
     try:
-        tx_hash = await client.create_order(order)
+        tx_hash = await client.place_order(order)
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
@@ -174,7 +191,7 @@ async def main():
     order3 = OrderRequest(
         market_address=ADDRESSES['mon/usdc'],
         order_type='cancel',
-        order_ids_to_cancel=["mm_1", "mm_2"]
+        cancel_cloids=["mm_1", "mm_2"]
     )
 
     orders = [order1, order2, order3]
@@ -208,18 +225,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Batch cancelling orders
 
-```python
-async def main():
-    try:
-        tx_hash = await client.batch_cancel_orders(["mm_1", "mm_2"])
-        print(f"Transaction hash: {tx_hash}")
-        return tx_hash
-    except Exception as e:
-        print(f"Error cancelling orders: {str(e)}")
-        return None
-```
 
 ## Components
 
@@ -270,15 +276,6 @@ async def on_trade(event):
 async def on_order_cancelled(event):
     print(f"Order {event.orderId} cancelled")
 
-client = KuruClient(
-    network_rpc='RPC_URL',
-    margin_account_address='MARGIN_ACCOUNT_ADDRESS',
-    websocket_url='WS_URL',
-    private_key='PRIVATE_KEY'
-    on_order_created=on_order_created
-    on_trade=on_trade
-    on_order_cancelled=on_order_cancelled
-)
 ```
 
 ### Orderbook Reconciliation
@@ -301,6 +298,13 @@ async def main():
     web3=web3,
     contract_address=market_address,
     private_key=os.getenv("PK")
+  )
+
+  client = ClientOrderExecutor(
+    web3=web3,
+    contract_address=market_address,
+    private_key=os.getenv("PK"),
+    websocket_url="wss://ws.testnet.kuru.io"
   )
 
   # Create a container class to hold the l2_book state
@@ -342,26 +346,6 @@ async def main():
         print(f"Payload: {payload}")
         # print(f"Current L2Book: {state.l2_book}")
 
-  client = KuruClient(
-    network_rpc=os.getenv("RPC_URL"),
-    margin_account_address=ADDRESSES['margin_account'],
-    private_key=os.getenv("PK"),
-    websocket_url=os.getenv("WS_URL"),
-    on_order_created=on_order_created,
-    on_order_cancelled=on_order_cancelled,
-    on_trade=on_trade
-  )
-
-  orders = generate_random_orders(market_address, 2)
-
-  for order in orders:
-    await client.create_order(order)
-
-    await asyncio.sleep(2)
-
-    print("client.executed_trades", client.get_all_executed_trades_for_market(market_address))
-
-  await asyncio.sleep(10)
 ```
 
 

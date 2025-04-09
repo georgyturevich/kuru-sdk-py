@@ -16,7 +16,7 @@ class Orderbook:
         self,
         web3: Web3,
         contract_address: str,
-        private_key: str
+        private_key: Optional[str] = None
     ):
         """
         Orderbook class
@@ -124,8 +124,6 @@ class Orderbook:
                 tx_hash = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
             else:
                 tx_hash = self.web3.eth.send_transaction(tx)
-                
-            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
             
             return tx_hash.hex()
         except Exception as e:
@@ -139,11 +137,7 @@ class Orderbook:
         tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
-        
-        # price * price precision % tick size 
-        
 
-        print(f"Price: {price}, Size: {size}")
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
 
         price_mod = price_normalized % self.market_params.tick_size
@@ -159,7 +153,6 @@ class Orderbook:
             # no normalization then clip the price if it's not divisible by the tick size 
             price_normalized = price_normalized - price_mod
 
-        print(f"Price normalized: {price_normalized}, Size normalized: {size_normalized}")
         return await self._prepare_transaction(
             "addBuyOrder",
             [price_normalized, size_normalized, post_only],
@@ -210,8 +203,11 @@ class Orderbook:
         tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_sell_order(price, size, post_only, tick_normalization, tx_options)
-        return await self._execute_transaction(tx)
+        try:
+            tx = await self.prepare_sell_order(price, size, post_only, tick_normalization, tx_options)
+            return await self._execute_transaction(tx)
+        except Exception as e:
+            raise Exception(f"Error adding sell order: {get_error_message(str(e))}")
 
     async def prepare_batch_cancel_orders(
         self,
@@ -229,9 +225,12 @@ class Orderbook:
         order_ids: List[int],
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_batch_cancel_orders(order_ids, tx_options)
-        tx_hash = await self._execute_transaction(tx)
-        return tx_hash
+        try:
+            tx = await self.prepare_batch_cancel_orders(order_ids, tx_options)
+            tx_hash = await self._execute_transaction(tx)
+            return tx_hash
+        except Exception as e:
+            raise Exception(f"Error batch canceling orders: {get_error_message(str(e))}")
     
     async def prepare_market_buy(
         self,
@@ -248,7 +247,6 @@ class Orderbook:
         value = 0
         if not is_margin and self.market_params.quote_asset == "0x0000000000000000000000000000000000000000":
             value = int(float(size) * float(str(10 ** self.market_params.quote_asset_decimals)))
-            print(f"Value: {value}")
         
         return await self._prepare_transaction(
             "placeAndExecuteMarketBuy",
@@ -303,12 +301,15 @@ class Orderbook:
         fill_or_kill: bool,
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_market_sell(
-            size, min_amount_out, is_margin, fill_or_kill,
-            tx_options
-        )
-        tx_hash = await self._execute_transaction(tx)
-        return tx_hash
+        try:
+            tx = await self.prepare_market_sell(
+                size, min_amount_out, is_margin, fill_or_kill,
+                tx_options
+            )
+            tx_hash = await self._execute_transaction(tx)
+            return tx_hash
+        except Exception as e:
+            raise Exception(f"Error market selling: {get_error_message(str(e))}")
 
     async def prepare_batch_orders(
         self,
@@ -360,12 +361,15 @@ class Orderbook:
         post_only: Optional[bool] = False,
         tx_options: TxOptions = TxOptions()
     ) -> str:
-        tx = await self.prepare_batch_orders(
-            buy_prices, buy_sizes, sell_prices, sell_sizes,
-            order_ids_to_cancel, post_only, tx_options
-        )
-        tx_hash = await self._execute_transaction(tx)
-        return tx_hash
+        try:
+            tx = await self.prepare_batch_orders(
+                buy_prices, buy_sizes, sell_prices, sell_sizes,
+                order_ids_to_cancel, post_only, tx_options
+            )
+            tx_hash = await self._execute_transaction(tx)
+            return tx_hash
+        except Exception as e:
+            raise Exception(f"Error batching orders: {get_error_message(str(e))}")
 
     async def get_vault_params(self) -> Dict[str, Any]:
         """Fetch vault parameters from the contract"""

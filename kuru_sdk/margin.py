@@ -5,6 +5,11 @@ from web3.contract import Contract
 import json
 import os
 
+
+# Load ERC20 ABI
+with open(os.path.join(os.path.dirname(__file__), 'abi/ierc20.json'), 'r') as f:
+    erc20_abi = json.load(f)
+
 class MarginAccount:
     def __init__(
         self,
@@ -23,6 +28,9 @@ class MarginAccount:
         self.web3 = web3
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.private_key = private_key
+
+        if self.private_key:
+            self.wallet_address = self.web3.eth.account.from_key(self.private_key).address
         
         # Load ABI from JSON file
         with open(os.path.join(os.path.dirname(__file__), 'abi/marginaccount.json'), 'r') as f:
@@ -38,10 +46,8 @@ class MarginAccount:
 
     async def deposit(
         self,
-        user: str,
         token: str,
         amount: int,
-        from_address: str
     ) -> str:
         """
         Deposit tokens into the margin account
@@ -55,12 +61,33 @@ class MarginAccount:
         Returns:
             transaction_hash: Hash of the submitted transaction
         """
-        user = Web3.to_checksum_address(user)
         token = Web3.to_checksum_address(token)
+        
+        # Check if token is not native and needs approval
+        if token != self.NATIVE:
+            
+            token_contract = self.web3.eth.contract(
+                address=token,
+                abi=erc20_abi
+            )
+            
+            # Check allowance
+            allowance = token_contract.functions.allowance(self.wallet_address, self.contract_address).call()
+            if allowance < amount:
+                print(f"Insufficient allowance. Current: {allowance}, Required: {amount}")
+                print("Approving tokens for deposit...")
+                allowance_tx = token_contract.functions.approve(self.contract_address, amount).build_transaction({
+                    'from': self.wallet_address,
+                    'nonce': self.web3.eth.get_transaction_count(self.wallet_address),
+                })
+                signed_tx = self.web3.eth.account.sign_transaction(allowance_tx, self.private_key)
+                tx_hash = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+                print(f"Approval transaction hash: {receipt.transactionHash.hex()}")
         
         # Build transaction
         transaction = self.contract.functions.deposit(
-            user,
+            self.wallet_address,
             token,
             amount
         )
@@ -69,12 +96,12 @@ class MarginAccount:
         value = amount if token == self.NATIVE else 0
         
         # Get gas estimate and nonce
-        gas_estimate = transaction.estimate_gas({'from': from_address, 'value': value})
-        nonce = self.web3.eth.get_transaction_count(from_address)
+        gas_estimate = transaction.estimate_gas({'from': self.wallet_address, 'value': value})
+        nonce = self.web3.eth.get_transaction_count(self.wallet_address)
         
         # Build transaction dict
         transaction_dict = {
-            'from': from_address,
+            'from': self.wallet_address,
             'nonce': nonce,
             'gas': gas_estimate,
             'gasPrice': self.web3.eth.gas_price,
@@ -89,8 +116,8 @@ class MarginAccount:
                 self.private_key
             )
             tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
+            print(f"Deposit transaction submitted: {tx_hash.hex()}")
         else:
-            # Let the user's wallet handle signing
             raise Exception("Private key is required to deposit tokens into the margin account")
             
         return tx_hash.hex()
@@ -99,7 +126,6 @@ class MarginAccount:
         self,
         token: str,
         amount: int,
-        from_address: str
     ) -> str:
         """
         Withdraw tokens from the margin account
@@ -121,12 +147,12 @@ class MarginAccount:
         )
         
         # Get gas estimate and nonce
-        gas_estimate = transaction.estimate_gas({'from': from_address})
-        nonce = self.web3.eth.get_transaction_count(from_address)
+        gas_estimate = transaction.estimate_gas({'from': self.wallet_address})
+        nonce = self.web3.eth.get_transaction_count(self.wallet_address)
         
         # Build transaction dict
         transaction_dict = {
-            'from': from_address,
+            'from': self.wallet_address,
             'nonce': nonce,
             'gas': gas_estimate,
             'gasPrice': self.web3.eth.gas_price
@@ -147,9 +173,9 @@ class MarginAccount:
     
     async def get_balance(
         self,
-        user: str,
+        user_address: str,
         token: str
     ) -> int:
-        return self.contract.functions.getBalance(user, token).call()
+        return self.contract.functions.getBalance(user_address, token).call()
 
 __all__ = ['MarginAccount']

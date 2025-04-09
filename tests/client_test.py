@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 import os
+import signal
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
@@ -46,8 +47,8 @@ async def place_market_buy(client: KuruClient, size: str, min_amount_out: str = 
     
 async def place_limit_buy(
     client: KuruClient,
-    price: str = "0.000150",
-    size: str = "10000",
+    price = 0.000150,
+    size = 10000,
     tx_options: TxOptions = TxOptions()
 ):
     order = OrderRequest(
@@ -62,6 +63,7 @@ async def place_limit_buy(
     try:
         print(f"Placing limit buy order: {size} units at {price}")
         tx_hash = await client.create_order(order)
+
         print(f"Transaction hash: {tx_hash}")
         return tx_hash
     except Exception as e:
@@ -70,14 +72,61 @@ async def place_limit_buy(
 
 
 async def main():
+    # Define shutdown signal
+    shutdown_event = asyncio.Future()
+
     client = KuruClient(
         network_rpc=NETWORK_RPC,
         margin_account_address=ADDRESSES['margin_account'],
         private_key=os.getenv("PK"),
+        api_url="http://api.kuru.io/api/v2",
+        websocket_url="wss://ws.testnet.kuru.io"
     )
-    # await place_market_buy(client, "10")
-    await place_limit_buy(client)
+
+    async def shutdown(sig): 
+        print(f"\nReceived exit signal {sig.name}...")
+        print("Disconnecting client...")
+        try:
+            await client.disconnect()
+        except Exception as e:
+            print(f"Error during disconnect: {e}")
+        finally:
+            print("Client disconnected.")
+            shutdown_event.set_result(True)
+            # Optional: Clean up signal handlers
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.remove_signal_handler(sig)
+
+    # Add signal handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
+
+    try:
+        print("Connecting client...")
+        await client.connect()
+        print("Client connected.")
+
+        # await place_market_buy(client, "10")
+        await place_limit_buy(client)
+
+        print("Order placed. Running indefinitely. Press Ctrl+C to exit.")
+        await shutdown_event # Wait until shutdown signal is received
+
+    except asyncio.CancelledError:
+        # This might happen if the main task is cancelled externally
+        print("Main task cancelled.")
+    finally:
+        # Ensure disconnect is called even if there's an error before shutdown_event is awaited
+        if not shutdown_event.done():
+            print("Performing cleanup due to unexpected exit...")
+            await client.disconnect()
+            print("Client disconnected.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nKeyboardInterrupt caught in __main__.")

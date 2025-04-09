@@ -1,17 +1,19 @@
 from web3 import Web3
+import asyncio
 
 from kuru_sdk.websocket_handler import WebSocketHandler
 from .orderbook import Orderbook, TxOptions
 from typing import Dict, List, Optional, Literal
 from dataclasses import dataclass
-from kuru_sdk.types import Order, OrderCreatedEvent, OrderRequest
+from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderRequest
 from kuru_sdk.api import KuruAPI
 
 class ClientOrderExecutor:
     def __init__(self,
                  web3: Web3,
                  contract_address: str,
-                 private_key: str,
+                 private_key: Optional[str] = None,
+                 kuru_api_url: Optional[str] = None,
                  websocket_url: Optional[str] = None,
                  on_order_created: Optional[callable] = None,
                  on_trade: Optional[callable] = None,
@@ -19,10 +21,12 @@ class ClientOrderExecutor:
         
         self.web3 = web3
         self.orderbook = Orderbook(web3, contract_address, private_key)
-
+        self.kuru_api = KuruAPI(kuru_api_url)
+        
+        market_ws_url = f"{websocket_url}?marketAddress={contract_address}"
         if websocket_url:
             self.websocket_handler = WebSocketHandler(
-                websocket_url=websocket_url,
+                websocket_url=market_ws_url,
                 on_order_created=on_order_created,
                 on_trade=on_trade,
                 on_order_cancelled=on_order_cancelled
@@ -36,12 +40,17 @@ class ClientOrderExecutor:
 
     async def connect(self):
         if self.websocket_handler:
-            await self.websocket_handler.connect()
+            # Start the websocket connection in the background
+            asyncio.create_task(self.websocket_handler.connect())
+            await asyncio.sleep(2)
+        else:
+            print("No websocket handler provided")
 
     async def disconnect(self):
         if self.websocket_handler:
             await self.websocket_handler.disconnect()
-
+        else:
+            print("No websocket handler provided")
 
     async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
@@ -105,7 +114,6 @@ class ClientOrderExecutor:
 
             # Wait for the transaction receipt using the web3 instance from the orderbook
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
-            print(f"Order receipt: {receipt}")
 
             if receipt.status == 1:
                 if cloid:
@@ -192,8 +200,6 @@ class ClientOrderExecutor:
 
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
 
-        print(f"Batch order receipt: {receipt}")
-
         if receipt.status == 1:
             order_created_events = self.orderbook.decode_logs(receipt)
             self.match_orders_with_events(orders, order_created_events)
@@ -219,6 +225,9 @@ class ClientOrderExecutor:
                 if order.price * self.orderbook.market_params.price_precision == event.price and order.side == ("buy" if event.is_buy else "sell"):
                     self.cloid_to_order_id[order.cloid] = event.order_id
 
+    async def get_l2_book(self) -> L2Book:
+        return await self.orderbook.fetch_orderbook()
+    
     ## Websocket handlers
     async def on_order_created_handler(self, payload):
         print(f"Order created: {payload}")
@@ -228,3 +237,23 @@ class ClientOrderExecutor:
         
     async def on_order_cancelled_handler(self, payload):
         print(f"Order cancelled: {payload}")
+
+
+    ## Kuru API
+    async def get_order_history(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
+        return self.kuru_api.get_order_history(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
+    
+    async def get_trades(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
+        return self.kuru_api.get_trades(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
+    
+    async def get_orders_by_ids(self, order_ids: List[int]) -> List[Order]:
+        return self.kuru_api.get_orders_by_ids(self.market_address, order_ids)
+
+    async def get_orders_by_cloids(self, cloids: List[str]) -> List[Order]:
+        order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
+        return self.get_orders_by_ids(order_ids)
+    
+    async def get_user_orders(self) -> List[Order]:
+        return self.kuru_api.get_user_orders(self.wallet_address)
+    
+    
