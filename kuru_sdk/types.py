@@ -138,10 +138,10 @@ class L2Book:
             combined_sells[order.price] = order.size
 
         # # Add AMM orders, combining sizes for matching prices
-        # for order in self.amm_buy_orders:
-        #     combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
-        # for order in self.amm_sell_orders:
-        #     combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+        for order in self.amm_buy_orders:
+            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        for order in self.amm_sell_orders:
+            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
 
         # Convert to sorted lists (sells in descending order)
         sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)[:10]  # Top 10 bids
@@ -177,10 +177,10 @@ class L2Book:
             combined_sells[order.price] = order.size
 
         # Not adding AMM orders to 
-        # for order in self.amm_buy_orders:
-        #     combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
-        # for order in self.amm_sell_orders:
-        #     combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+        for order in self.amm_buy_orders:
+            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        for order in self.amm_sell_orders:
+            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
         
         return FormattedL2Book(
             block_num=self.block_num,

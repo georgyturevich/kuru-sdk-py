@@ -474,6 +474,41 @@ class Orderbook:
             vault_params=vault_params
         )
     
+    async def get_l2_book(self):
+        """
+        Get the current state of the orderbook including both regular orders and AMM prices.
+        
+        Returns:
+            L2Book: Current state of the orderbook containing buy and sell orders
+        """
+        orderbook = await self.fetch_orderbook()
+
+        combined_buys = {}
+        combined_sells = {}
+
+        # Process regular orders
+        for order in orderbook.buy_orders:
+            combined_buys[order.price] = order.size
+        for order in orderbook.sell_orders:
+            combined_sells[order.price] = order.size
+
+        # # Add AMM orders, combining sizes for matching prices
+        for order in orderbook.amm_buy_orders:
+            combined_buys[order.price] = combined_buys.get(order.price, 0) + order.size
+        for order in orderbook.amm_sell_orders:
+            combined_sells[order.price] = combined_sells.get(order.price, 0) + order.size
+
+        # Convert to sorted lists (sells in descending order)
+        sorted_buys = sorted(combined_buys.items(), key=lambda x: x[0], reverse=True)[:10]  # Top 10 bids
+        sorted_sells = sorted(combined_sells.items(), key=lambda x: x[0], reverse=True)[-10:]  # Last 10 asks
+
+        # Convert to OrderPriceSize to [Price, Size]
+        sorted_buys = [[price, size] for price, size in sorted_buys]
+        sorted_sells = [[price, size] for price, size in sorted_sells]
+        
+        return [sorted_sells, sorted_buys]
+
+    
     def get_order_id_from_receipt(self, receipt) -> int | None:
         """
         Get the order id by decoding the OrderCreated event from the transaction receipt logs.

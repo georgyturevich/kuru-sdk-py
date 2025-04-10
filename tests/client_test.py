@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import List, Optional
 import os
 import signal
+
+from kuru_sdk.client_order_executor import ClientOrderExecutor
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
@@ -11,7 +13,6 @@ sys.path.append(project_root)
 from dotenv import load_dotenv
 load_dotenv()
 
-from kuru_sdk.client import KuruClient
 from kuru_sdk.types import OrderRequest, TxOptions
 
 
@@ -25,7 +26,7 @@ ADDRESSES = {
 }
 
 
-async def place_market_buy(client: KuruClient, size: str, min_amount_out: str = "0", tx_options: TxOptions = TxOptions()):
+async def place_market_buy(client: ClientOrderExecutor, size: str, min_amount_out: str = "0", tx_options: TxOptions = TxOptions()):
     """Place a market buy order"""
 
     order = OrderRequest(
@@ -75,12 +76,10 @@ async def main():
     # Define shutdown signal
     shutdown_event = asyncio.Future()
 
-    client = KuruClient(
+    client = ClientOrderExecutor(
         network_rpc=NETWORK_RPC,
-        margin_account_address=ADDRESSES['margin_account'],
         private_key=os.getenv("PK"),
         api_url="http://api.kuru.io/api/v2",
-        websocket_url="wss://ws.testnet.kuru.io"
     )
 
     async def shutdown(sig): 

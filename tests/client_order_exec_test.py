@@ -5,7 +5,6 @@ from pathlib import Path
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
 
-from kuru_sdk.client import KuruClient
 from kuru_sdk.types import OrderRequest
 
 from kuru_sdk.client_order_executor import ClientOrderExecutor

@@ -2,7 +2,7 @@ from web3 import Web3
 
 from kuru_sdk.orderbook import Orderbook, TxOptions
 from typing import Dict, List, Optional
-from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderRequest
+from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderPriceSize, OrderRequest
 from kuru_sdk.api import KuruAPI
 
 class ClientOrderExecutor:
@@ -216,8 +216,8 @@ class ClientOrderExecutor:
                     self.order_id_to_cloid[event.order_id] = order.cloid
     
     
-    async def get_l2_book(self) -> L2Book:
-        return await self.orderbook.fetch_orderbook()
+    async def get_l2_book(self):
+        return await self.orderbook.get_l2_book()
     
     def get_order_by_cloid(self, cloid: str) -> OrderRequest:
         return self.cloid_to_order[cloid]
