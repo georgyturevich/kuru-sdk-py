@@ -14,44 +14,31 @@ class ClientOrderExecutor:
                  contract_address: str,
                  private_key: Optional[str] = None,
                  kuru_api_url: Optional[str] = None,
-                 websocket_url: Optional[str] = None,
-                 on_order_created: Optional[callable] = None,
-                 on_trade: Optional[callable] = None,
-                 on_order_cancelled: Optional[callable] = None):
+             ):
         
         self.web3 = web3
         self.orderbook = Orderbook(web3, contract_address, private_key)
         self.kuru_api = KuruAPI(kuru_api_url)
-        
-        market_ws_url = f"{websocket_url}?marketAddress={contract_address}"
-        if websocket_url:
-            self.websocket_handler = WebSocketHandler(
-                websocket_url=market_ws_url,
-                market_params=self.orderbook.market_params,
-                on_order_created=on_order_created,
-                on_trade=on_trade,
-                on_order_cancelled=on_order_cancelled
-            )
-
         self.wallet_address = self.web3.eth.account.from_key(private_key).address
         
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
+        self.order_id_to_cloid: Dict[int, str] = {}
         self.cloid_to_order: Dict[str, OrderRequest] = {}
 
-    async def connect(self):
-        if self.websocket_handler:
-            # Start the websocket connection in the background
-            asyncio.create_task(self.websocket_handler.connect())
-            await asyncio.sleep(2)
-        else:
-            print("No websocket handler provided")
+    # async def connect(self):
+    #     if self.websocket_handler:
+    #         # Start the websocket connection in the background
+    #         asyncio.create_task(self.websocket_handler.connect())
+    #         await asyncio.sleep(2)
+    #     else:
+    #         print("No websocket handler provided")
 
-    async def disconnect(self):
-        if self.websocket_handler:
-            await self.websocket_handler.disconnect()
-        else:
-            print("No websocket handler provided")
+    # async def disconnect(self):
+    #     if self.websocket_handler:
+    #         await self.websocket_handler.disconnect()
+    #     else:
+    #         print("No websocket handler provided")
 
     async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
@@ -122,6 +109,7 @@ class ClientOrderExecutor:
                     print(f"Order ID: {order_id}")
                     if order_id:
                         self.cloid_to_order_id[cloid] = order_id
+                        self.order_id_to_cloid[order_id] = cloid
                     print(f"Transaction successful for cloid {cloid}, tx_hash: {receipt.transactionHash.hex()}")
                 return receipt.transactionHash.hex() # Return the full receipt object
             else:
@@ -211,6 +199,9 @@ class ClientOrderExecutor:
             raise Exception(f"Batch order failed: Transaction status {receipt.status}, receipt: {receipt}")
         
 
+    # async def cancel_all_active_orders_for_market(self, tx_options: Optional[TxOptions] = TxOptions()):
+
+
     def get_order_id_by_cloid(self, cloid: str) -> int:
         return self.cloid_to_order_id[cloid]
 
@@ -225,19 +216,17 @@ class ClientOrderExecutor:
             for event in events:
                 if order.price * self.orderbook.market_params.price_precision == event.price and order.side == ("buy" if event.is_buy else "sell"):
                     self.cloid_to_order_id[order.cloid] = event.order_id
-
+                    self.order_id_to_cloid[event.order_id] = order.cloid
+    
+    
     async def get_l2_book(self) -> L2Book:
         return await self.orderbook.fetch_orderbook()
     
-    ## Websocket handlers
-    async def on_order_created_handler(self, payload):
-        print(f"Order created: {payload}")
-
-    async def on_trade_handler(self, payload):
-        print(f"Trade: {payload}")
-        
-    async def on_order_cancelled_handler(self, payload):
-        print(f"Order cancelled: {payload}")
+    def get_order_by_cloid(self, cloid: str) -> OrderRequest:
+        return self.cloid_to_order[cloid]
+    
+    def get_order_id_by_cloid(self, cloid: str) -> int:
+        return self.cloid_to_order_id[cloid]
 
 
     ## Kuru API

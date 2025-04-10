@@ -8,6 +8,7 @@ from kuru_sdk.types import OrderCreatedPayload, TradePayload, OrderCancelledPayl
 class WebSocketHandler:
     def __init__(self,
                  websocket_url: str,
+                 market_address: str,
                  market_params: MarketParams,
                  on_order_created: Optional[Callable[[OrderCreatedPayload], None]] = None,
                  on_trade: Optional[Callable[[TradePayload], None]] = None,
@@ -16,6 +17,7 @@ class WebSocketHandler:
                  max_reconnect_attempts: int = 5):
         
         self.websocket_url = websocket_url
+        self.market_address = market_address
         self._session = None
 
         self.market_params = market_params
@@ -82,7 +84,7 @@ class WebSocketHandler:
             
             print(self.websocket_url)
             await self.sio.connect(
-                self.websocket_url,
+                f"{self.websocket_url}?marketAddress={self.market_address}",
                 transports=['websocket']
             )
             print(f"Successfully connected to {self.websocket_url}")
