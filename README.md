@@ -1,356 +1,142 @@
 # Kuru Python SDK
 
-A Python SDK for interacting with Kuru's Central Limit Orderbook (CLOB).
-
-## Features
-
-- Margin Account Management
-  - Deposit and withdraw tokens
-- Order Management
-  - Place limit and market orders
-  - Cancel orders
-  - Real-time order tracking via WebSocket
-  - Batch orders
-
+A Python SDK for interacting with the Kuru protocol, enabling market makers to manage orders, interact with margin accounts, and query exchange data.
 
 ## Installation
+
+To install the Kuru SDK, you can use pip:
 
 ```bash
 pip install kuru-sdk
 ```
 
-## Environment Variables
 
-The SDK uses the following environment variables:
+## Getting Started
 
-```bash
-RPC_URL=your_ethereum_rpc_url
-PK=your_private_key
+This SDK provides tools to interact with the Kuru order book and margin accounts primarily through Web3 and WebSocket connections for real-time order execution. It also offers a basic REST API client for querying data.
+
+### Prerequisites
+
+*   Python 3.8+
+*   A Monad RPC URL (e.g., from Infura, Alchemy, or a local node)
+*   A private key for the wallet interacting with the Kuru contracts.
+
+### Configuration
+
+The SDK often requires environment variables for configuration. Create a `.env` file in your project root:
+
+```dotenv
+RPC_URL=YOUR_ETHEREUM_RPC_URL
+PK=YOUR_WALLET_PRIVATE_KEY
+# Optional: WebSocket URL if different from default
+WEBSOCKET_URL=wss://ws.testnet.kuru.io
 ```
 
-## Quick Start
+### Basic Usage: Placing Orders
 
-Here's an example for depositing to the margin account. User needs margin account balance for limit orders.
-
-Note: The deposit amount is in wei
+Here's a simplified example of connecting to the WebSocket and placing a batch of orders using the `ClientOrderExecutor`:
 
 ```python
 import asyncio
-import sys
-from pathlib import Path
-
-# Add project root to Python path
-project_root = str(Path(__file__).parent.parent)
-sys.path.append(project_root)
-
-from web3 import Web3
-from kuru_sdk.margin import MarginAccount
 import os
-import json
-import argparse
-
+from web3 import Web3
 from dotenv import load_dotenv
+from kuru_sdk import ClientOrderExecutor
+from kuru_sdk.types import OrderRequest
 
 load_dotenv()
 
-from kuru_sdk.client import KuruClient
+# Network and contract configuration (replace with actual addresses)
+NETWORK_RPC = os.getenv("RPC_URL")
+PRIVATE_KEY = os.getenv("PK")
+WEBSOCKET_URL = os.getenv("WEBSOCKET_URL", "wss://ws.testnet.kuru.io")
+ORDERBOOK_ADDRESS = '0x05e6f736b5dedd60693fa806ce353156a1b73cf3' # Example address
 
-# Network and contract configuration
-NETWORK_RPC = os.getenv("RPC_URL")  # Replace with your network RPC
-ADDRESSES = {
-    'mon/usdc': '0x3a4cc34d6cc8b5e8aeb5083575aaa27f2a0a184a',
-    'margin_account': '0x33fa695D1B81b88638eEB0a1d69547Ca805b8949',
-    'usdc': '0x9A29e9Bab1f0B599d1c6C39b60a79596b3875f56',
-    'mon': '0x0000000000000000000000000000000000000000'
-}
-
-async def main():
-    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
-    margin_account = MarginAccount(
-        web3=web3,
-        contract_address=ADDRESSES['margin_account'],
-        private_key=os.getenv('PK')
-    )
-    
-    wallet_address = web3.eth.account.from_key(os.getenv('PK')).address
-
-    # deposit 10 mon
-    await margin_account.deposit(
-        token=ADDRESSES['mon'],
-        amount=10000000000000000000
-    )
-
-    balance = await margin_account.get_balance(
-        user_address=wallet_address,
-        token=ADDRESSES['mon']
-    )
-    print(f"Balance: {balance}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-```
-
-Here's a complete example showing how to place orders with different transaction options:
-
-### Placing single order
-```python
-async def main():
-
+async def run():
     client = ClientOrderExecutor(
         web3=Web3(Web3.HTTPProvider(NETWORK_RPC)),
-        contract_address=ADDRESSES['orderbook'],
-        private_key=os.getenv("PK"),
-        websocket_url="wss://ws.testnet.kuru.io"
-    )
-
-    # Limit buy
-    order = OrderRequest(
-        cloid = "mm_1"
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='limit',
-        side='buy',
-        price=price,
-        size=size,
-        post_only=post_only
-    )
-
-    # Limit sell
-    order = OrderRequest(
-        cloid = "mm_2"
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='limit',
-        side='sell',
-        price=price,
-        size=size,
-        post_only=post_only
-    )
-
-    # Market buy
-    order = OrderRequest(
-        cloid = "mm_3"
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='market',
-        side='buy',
-        size=size,
-        min_amount_out=min_amount,
-        fill_or_kill=False
-    )
-
-    # Market sell
-    order = OrderRequest(
-        cloid = "mm_4"
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='market',
-        side='sell',
-        size=size,
-        min_amount_out=min_amount,
-        fill_or_kill=False
+        contract_address=ORDERBOOK_ADDRESS,
+        private_key=PRIVATE_KEY,
+        websocket_url=WEBSOCKET_URL
     )
 
     try:
-        tx_hash = await client.place_order(order)
-        print(f"Transaction hash: {tx_hash}")
-        return tx_hash
+        print("Connecting client...")
+        await client.connect()
+        print("Client connected.")
+
+        # Define orders
+        orders_to_place = [
+            OrderRequest(
+                market_address=ORDERBOOK_ADDRESS,
+                order_type='limit',
+                side='buy',
+                price=0.0000002,
+                size=10000,
+                cloid="my_buy_order_1" # Unique client order ID
+            ),
+            OrderRequest(
+                market_address=ORDERBOOK_ADDRESS,
+                order_type='limit',
+                side='sell',
+                price=0.0000005,
+                size=5000,
+                cloid="my_sell_order_1"
+            ),
+        ]
+
+        # Place batch orders
+        tx_hash_place = await client.batch_orders(orders_to_place)
+        print(f"Batch place order transaction hash: {tx_hash_place}")
+
+        await asyncio.sleep(5) # Allow time for processing
+
+        # Define cancellations
+        orders_to_cancel = [
+             OrderRequest(
+                market_address=ORDERBOOK_ADDRESS,
+                order_type='cancel',
+                cancel_cloids=["my_buy_order_1"] # Reference by client order ID
+            )
+        ]
+
+        # Cancel orders
+        tx_hash_cancel = await client.batch_orders(orders_to_cancel)
+        print(f"Batch cancel order transaction hash: {tx_hash_cancel}")
+
+        # Keep running or add other logic here
+        print("Orders managed. Add further logic or close.")
+
     except Exception as e:
-        print(f"Error placing order: {str(e)}")
-        return None
+        print(f"An error occurred: {e}")
+    finally:
+        print("Disconnecting client...")
+        await client.disconnect()
+        print("Client disconnected.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### Placing batch orders
-```python
-async def main():
-
-    # Limit buy
-    order1 = OrderRequest(
-        cloid = "mm_5"
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='limit',
-        side='buy',
-        price=price,
-        size=size,
-        post_only=post_only
-    )
-
-    # Limit sell
-    order2 = OrderRequest(
-        cloid = "mm_6"
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='limit',
-        side='sell',
-        price=price,
-        size=size,
-        post_only=post_only
-    )
-
-    # Cancel order
-    order3 = OrderRequest(
-        market_address=ADDRESSES['mon/usdc'],
-        order_type='cancel',
-        cancel_cloids=["mm_1", "mm_2"]
-    )
-
-    orders = [order1, order2, order3]
-
     try:
-        tx_hash = await client.batch_orders(order)
-        print(f"Transaction hash: {tx_hash}")
-        return tx_hash
-    except Exception as e:
-        print(f"Error placing batch order: {str(e)}")
-        return None
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### Cancelling order
-
-```python
-
-async def main():
-    try:
-        tx_hash = await client.cancel_order("mm_1")
-        print(f"Transaction hash: {tx_hash}")
-        return tx_hash
-    except Exception as e:
-        print(f"Error cancelling order: {str(e)}")
-        return None
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-
-
-## Components
-
-### Transaction Options
-
-You can customize transaction parameters using `TxOptions`:
-
-```python
-# Basic gas settings
-tx_options = TxOptions(
-    gas_limit=140000,
-    gas_price=1000000000,  # 1 gwei
-    max_priority_fee_per_gas=0
-)
-
-# With custom nonce
-tx_options = TxOptions(
-    gas_limit=140000,
-    gas_price=1000000000,
-    max_priority_fee_per_gas=0,
-    nonce=web3.eth.get_transaction_count(address)
-)
-```
-
-By using `TxOptions` tou can save 1-2 seconds in runtime.
-
-### WebSocket Connection Management
-
-The SDK handles WebSocket connections automatically, but you need to properly connect and disconnect:
-The client automatically connects to ws. But it has to be manually disabled once done.
-
-### Event Handling
-
-The SDK provides real-time order updates through WebSocket events:
-
-```python
-async def on_order_created(event):
-    print(f"Order created - ID: {event.orderId}")
-    print(f"Size: {event.size}, Price: {event.price}")
-    print(f"Transaction: {event.transactionHash}")
-
-async def on_trade(event):
-    print(f"Trade executed for order {event.orderId}")
-    print(f"Filled size: {event.filledSize} @ {event.price}")
-    print(f"Maker: {event.makerAddress}")
-    print(f"Taker: {event.takerAddress}")
-
-async def on_order_cancelled(event):
-    print(f"Order {event.orderId} cancelled")
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        print("\nExiting gracefully...")
 
 ```
 
-### Orderbook Reconciliation
+## Key Features
 
-The SDK provides a method to reconcile the local orderbook with the on-chain orderbook using events from the websocket. This requires you to write custom callback functions and pass it to the KuruClient.
+*   **`ClientOrderExecutor`**: Manages Orders with client orders for real-time order placement, cancellation, and updates. Uses Web3 for signing and sending transactions.
+*   **`Orderbook`**: Interacts directly with the Orderbook contract via Web3 calls (primarily for read operations or direct transactions if not using the WebSocket client).
+*   **`MarginAccount`**: Interacts with the MarginAccount contract via Web3 calls.
+*   **`KuruAPI`**: A simple client for querying REST API endpoints (e.g., fetching user orders, trades).
+*   **`types`**: Defines data structures like `OrderRequest` for standardized interactions.
+*   **`websocket_handler`**: Core WebSocket communication logic used by `ClientOrderExecutor`.
 
+## Examples
 
-```python
-class OrderbookState:
-  def __init__(self):
-    self.l2_book = None
+The `examples/` directory contains more detailed scripts demonstrating various functionalities:
 
-async def main():
-
-  web3 = Web3(Web3.HTTPProvider(os.getenv("RPC_URL")))
-
-  market_address = ADDRESSES['mon/usdc']
-
-  orderbook = Orderbook(
-    web3=web3,
-    contract_address=market_address,
-    private_key=os.getenv("PK")
-  )
-
-  client = ClientOrderExecutor(
-    web3=web3,
-    contract_address=market_address,
-    private_key=os.getenv("PK"),
-    websocket_url="wss://ws.testnet.kuru.io"
-  )
-
-  # Create a container class to hold the l2_book state
-
-  state = OrderbookState()
-  state.l2_book = await orderbook.fetch_orderbook()
-  print(state.l2_book)
-
-  # on order created callback that reconciles the orderbook and updates l2_book
-  def on_order_created(payload):
-    try:
-      print(f"Received order created event: {payload}")
-      state.l2_book = orderbook.reconcile_orderbook(state.l2_book, "OrderCreated", payload)
-      print("Updated L2Book:", state.l2_book)
-    except Exception as e:
-      print(f"Error reconciling order created: {e}")
-      print(f"Payload: {payload}")
-      # print(f"Current L2Book: {state.l2_book}")
-
-  # on order cancelled callback that reconciles the orderbook and updates l2_book
-  def on_order_cancelled(payload):
-    print(f"Received order cancelled event: {payload}")
-    try:
-      state.l2_book = orderbook.reconcile_orderbook(state.l2_book, "OrderCancelled", payload)
-      print("Updated L2Book:", state.l2_book)
-    except Exception as e:
-      print(f"Error reconciling order cancelled: {e}")
-      print(f"Payload: {payload}")
-      # print(f"Current L2Book: {state.l2_book}")
-
-  # on trade callback that reconciles the orderbook and updates l2_book
-  def on_trade(payload):
-    print(f"Received trade event: {payload}")
-    try:
-        state.l2_book = orderbook.reconcile_orderbook(state.l2_book, "Trade", payload)
-        print("Updated L2Book:", state.l2_book)
-    except Exception as e:
-        print(f"Error reconciling trade: {e}")
-        print(f"Payload: {payload}")
-        # print(f"Current L2Book: {state.l2_book}")
-
-```
-
-
-# Always disconnect when done
-```python
-await client.disconnect()
-```
-
+*   `deposit.py`: Shows how to deposit funds into the margin account.
+*   `place_order.py`: Demonstrates placing and cancelling orders via WebSocket, including signal handling for graceful shutdown.
+*   `simple_market_maker.py`: A more complex example implementing a basic market-making strategy.
+*   `view_orderbook.py`: Example of querying order book data.
+*   `ws_place_order.py`: Another example focusing on WebSocket order placement.

@@ -36,7 +36,7 @@ async def main():
 
     await margin_account.deposit(
         token=ADDRESSES['chog'],
-        amount=10000000000000000000
+        amount=100000000000000000000000
     )
 
     balance = await margin_account.get_balance(
