@@ -87,14 +87,14 @@ async def main():
               size=10000,
               cloid="mm_2"
             ),
-          OrderRequest(
-              market_address=ADDRESSES['orderbook'],
-              order_type='limit',
-              side='sell',
-              price=0.0002,
-              size=10000,
-              cloid="mm_3"
-            ),
+          # OrderRequest(
+          #     market_address=ADDRESSES['orderbook'],
+          #     order_type='limit',
+          #     side='sell',
+          #     price=0.0002,
+          #     size=10000,
+          #     cloid="mm_3"
+          #   ),
         ]
         
         tx_hash = await client.batch_orders(orders)
@@ -111,14 +111,14 @@ async def main():
                 size=10000,
                 cloid="mm_4"
             ),
-            OrderRequest(
-                market_address=ADDRESSES['orderbook'],
-                order_type='limit',
-                side='sell',
-                price=0.0002,
-                size=10000,
-                cloid="mm_5"
-            ),
+            # OrderRequest(
+            #     market_address=ADDRESSES['orderbook'],
+            #     order_type='limit',
+            #     side='sell',
+            #     price=0.0002,
+            #     size=10000,
+            #     cloid="mm_5"
+            # ),
             OrderRequest(
                 market_address=ADDRESSES['orderbook'],
                 order_type='cancel',

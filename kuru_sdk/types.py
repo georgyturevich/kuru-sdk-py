@@ -40,7 +40,6 @@ class OrderPriceSize:
     price: float
     size: float
 
-
 @dataclass
 class OrderCreatedEvent:
     order_id: int
@@ -48,7 +47,43 @@ class OrderCreatedEvent:
     size: int
     is_buy: bool
 
+@dataclass
+class OrderCreatedPayload:
+    order_id: int
+    market_address: str
+    owner: str
+    price: float
+    size: float
+    is_buy: bool
+    block_number: int
+    tx_index: int
+    log_index: int
+    transaction_hash: str
+    trigger_time: str
+    remaining_size: float
+    is_canceled: bool
+    
+@dataclass
+class TradePayload:
+    order_id: int
+    market_address: str
+    maker_address: str
+    is_buy: bool
+    price: float
+    updated_size: float
+    taker_address: str
+    filled_size: float
+    block_number: int
+    tx_index: int
+    log_index: int
+    transaction_hash: str
+    trigger_time: str
 
+@dataclass
+class OrderCancelledPayload:
+    order_ids: List[int]
+    maker_address: str
+    canceled_orders_data: List[OrderCreatedPayload]
 @dataclass
 class OrderRequest:
     market_address: str # Market address

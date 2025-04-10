@@ -27,6 +27,7 @@ class ClientOrderExecutor:
         if websocket_url:
             self.websocket_handler = WebSocketHandler(
                 websocket_url=market_ws_url,
+                market_params=self.orderbook.market_params,
                 on_order_created=on_order_created,
                 on_trade=on_trade,
                 on_order_cancelled=on_order_cancelled
