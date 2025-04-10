@@ -1,4 +1,3 @@
-import datetime
 import socketio
 import asyncio
 import aiohttp

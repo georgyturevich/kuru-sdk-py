@@ -1,7 +1,5 @@
 from web3 import Web3
-from eth_typing import Address
-from typing import Optional, Union, List, Dict, Any
-from web3.contract import Contract
+from typing import Optional
 import json
 import os
 

@@ -1,7 +1,5 @@
 
 import re
-from kuru_sdk.types import OrderCreatedEvent
-
 
 error_codes = {
     "bb55fd27": "Insufficient Liquidity",

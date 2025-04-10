@@ -201,8 +201,6 @@ class OrderExecutor:
     async def run(self):
         try:
             await self.initialize()
-          
-
             # Place initial batch orders
             await self.place_batch_orders()
 

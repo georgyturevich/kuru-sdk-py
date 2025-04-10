@@ -1,8 +1,7 @@
 from web3 import Web3
-from typing import Optional, Dict, Any
+from typing import Optional
 from decimal import Decimal
 import json
-import os
 from pathlib import Path
 
 class TokenError:

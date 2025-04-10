@@ -1,10 +1,7 @@
 from web3 import Web3
-import asyncio
 
-from kuru_sdk.websocket_handler import WebSocketHandler
-from .orderbook import Orderbook, TxOptions
-from typing import Dict, List, Optional, Literal
-from dataclasses import dataclass
+from kuru_sdk.orderbook import Orderbook, TxOptions
+from typing import Dict, List, Optional
 from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderRequest
 from kuru_sdk.api import KuruAPI
 
