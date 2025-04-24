@@ -1,22 +1,40 @@
 from web3 import Web3
+from web3 import AsyncWeb3
+from typing import Dict, List, Optional, Union
+import asyncio
 
 from kuru_sdk.orderbook import Orderbook, TxOptions
-from typing import Dict, List, Optional
 from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderPriceSize, OrderRequest
 from kuru_sdk.api import KuruAPI
 
 class ClientOrderExecutor:
     def __init__(self,
-                 web3: Web3,
+                 web3: Union[Web3, AsyncWeb3],
                  contract_address: str,
                  private_key: Optional[str] = None,
                  kuru_api_url: Optional[str] = None,
              ):
         
-        self.web3 = web3
+        # Use orderbook with async-compatible web3
         self.orderbook = Orderbook(web3, contract_address, private_key)
         self.kuru_api = KuruAPI(kuru_api_url)
-        self.wallet_address = self.web3.eth.account.from_key(private_key).address
+        
+        # Always use AsyncWeb3
+        from web3 import AsyncHTTPProvider
+        if isinstance(web3, AsyncWeb3):
+            # Already async, just use it
+            self.web3 = web3
+        elif hasattr(web3.provider, 'endpoint_uri'):
+            # Convert to AsyncWeb3
+            endpoint = web3.provider.endpoint_uri
+            self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+        else:
+            raise ValueError("Cannot determine provider endpoint for Web3 instance")
+            
+        # Store account info
+        if private_key:
+            self.account = web3.eth.account.from_key(private_key)
+            self.wallet_address = self.account.address
         
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
@@ -97,8 +115,8 @@ class ClientOrderExecutor:
             if order.order_type == "cancel":
                 tx_hash = await self.cancel_orders(cloids=[cloid], tx_options=tx_options)
 
-            # Wait for the transaction receipt using the web3 instance from the orderbook
-            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            # Wait for the transaction receipt asynchronously
+            receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
 
             if receipt.status == 1:
                 if cloid:
@@ -132,7 +150,10 @@ class ClientOrderExecutor:
                     raise ValueError(f"Order ID not found for cloid: {cloid}")
 
         tx_hash = await self.orderbook.batch_orders(order_ids_to_cancel=order_ids, tx_options=tx_options)
-        receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        
+        # Wait for the transaction receipt asynchronously
+        receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            
         return receipt.transactionHash.hex()
     
     async def batch_orders(
@@ -184,7 +205,8 @@ class ClientOrderExecutor:
             tx_options=tx_options
         )
 
-        receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        # Wait for the transaction receipt asynchronously
+        receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
 
         if receipt.status == 1:
             order_created_events = self.orderbook.decode_logs(receipt)
@@ -228,19 +250,23 @@ class ClientOrderExecutor:
 
     ## Kuru API
     async def get_order_history(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
-        return self.kuru_api.get_order_history(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
+        return await self.kuru_api.get_order_history(self.wallet_address)
     
-    async def get_trades(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
-        return self.kuru_api.get_trades(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
+    async def get_trades(self, market_address: str, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
+        return await self.kuru_api.get_trades(market_address, self.wallet_address, start_timestamp, end_timestamp)
     
-    async def get_orders_by_ids(self, order_ids: List[int]) -> List[Order]:
-        return self.kuru_api.get_orders_by_ids(self.market_address, order_ids)
+    async def get_orders_by_ids(self, market_address: str, order_ids: List[int]) -> List[Order]:
+        return await self.kuru_api.get_orders_by_ids(market_address, order_ids)
 
-    async def get_orders_by_cloids(self, cloids: List[str]) -> List[Order]:
+    async def get_orders_by_cloids(self, market_address: str, cloids: List[str]) -> List[Order]:
         order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
-        return self.get_orders_by_ids(order_ids)
+        return await self.get_orders_by_ids(market_address, order_ids)
     
     async def get_user_orders(self) -> List[Order]:
-        return self.kuru_api.get_user_orders(self.wallet_address)
+        return await self.kuru_api.get_user_orders(self.wallet_address)
+        
+    async def close(self):
+        """Close the API client session"""
+        await self.kuru_api.close()
     
     

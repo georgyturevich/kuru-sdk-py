@@ -1,8 +1,10 @@
 from math import ceil, floor, log10
 from web3 import Web3
-from typing import Optional, List, Tuple, Dict, Any
+from web3 import AsyncWeb3
+from typing import Optional, List, Tuple, Dict, Any, Union
 import json
 import os
+import asyncio
 
 from kuru_sdk.utils import get_error_message
 
@@ -12,7 +14,7 @@ from .types import MarketParams, OrderCreatedEvent, TxOptions, L2Book, Formatted
 class Orderbook:
     def __init__(
         self,
-        web3: Web3,
+        web3: Union[Web3, AsyncWeb3],
         contract_address: str,
         private_key: Optional[str] = None
     ):
@@ -22,11 +24,10 @@ class Orderbook:
         
         Initialize the Orderbook SDK
         Args:
-            web3: Web3 instance
+            web3: Web3 or AsyncWeb3 instance
             contract_address: Address of the deployed Orderbook contract
             private_key: Private key for signing transactions (optional)
         """
-        self.web3 = web3
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.private_key = private_key
         
@@ -34,15 +35,54 @@ class Orderbook:
         with open(os.path.join(os.path.dirname(__file__), 'abi/orderbook.json'), 'r') as f:
             contract_abi = json.load(f)
         
+        # Always use AsyncWeb3
+        from web3 import AsyncHTTPProvider
+        if isinstance(web3, AsyncWeb3):
+            # Already async, just use it
+            self.web3 = web3
+        elif hasattr(web3.provider, 'endpoint_uri'):
+            # Convert to AsyncWeb3
+            endpoint = web3.provider.endpoint_uri
+            self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+        else:
+            raise ValueError("Cannot determine provider endpoint for Web3 instance")
+            
+        # Create contract interfaces
         self.contract = self.web3.eth.contract(
             address=self.contract_address,
             abi=contract_abi
         )
         
+        # Store account for transaction signing
+        if self.private_key:
+            self.account = web3.eth.account.from_key(self.private_key)
+            
+        # Load market parameters synchronously at init time
         self.market_params = self._fetch_market_params()
 
     def _fetch_market_params(self) -> MarketParams:
         params = self.contract.functions.getMarketParams().call()
+        return MarketParams(
+            price_precision=params[0],
+            size_precision=params[1],
+            base_asset=params[2],
+            base_asset_decimals=params[3],
+            quote_asset=params[4],
+            quote_asset_decimals=params[5],
+            tick_size=params[6],
+            min_size=params[7],
+            max_size=params[8],
+            taker_fee_bps=params[9],
+            maker_fee_bps=params[10]
+        )
+        
+    async def _async_fetch_market_params(self) -> MarketParams:
+        """Async version of _fetch_market_params"""
+        if self.is_async:
+            params = await self.contract.functions.getMarketParams().call()
+        else:
+            params = await self.async_contract.functions.getMarketParams().call()
+            
         return MarketParams(
             price_precision=params[0],
             size_precision=params[1],
@@ -390,7 +430,8 @@ class Orderbook:
         
     async def get_vault_params_from_contract(self) -> VaultParams:
         """Fetch vault parameters from the contract"""
-        vault_params = self.contract.functions.getVaultParams().call()
+        vault_params = await self.contract.functions.getVaultParams().call()
+            
         return VaultParams(
             kuru_amm_vault=vault_params[0],
             vault_best_bid=vault_params[1],
@@ -409,8 +450,8 @@ class Orderbook:
         Returns:
             L2Book: Current state of the orderbook containing buy and sell orders
         """
-        # Get raw L2 book data from contract
-        l2_book_data = self.contract.functions.getL2Book().call()
+        # Get raw L2 book data from contract asynchronously
+        l2_book_data = await self.contract.functions.getL2Book().call()
         
         # Parse raw L2 data into price/size orders
         buy_orders = []
@@ -572,8 +613,8 @@ class Orderbook:
         bids = []
         asks = []
         
-        # Get vault parameters
-        vault_params = self.contract.functions.getVaultParams().call()
+        # Get vault parameters using async call
+        vault_params = await self.contract.functions.getVaultParams().call()
         
         vault_best_bid = vault_params[1]
         vault_best_ask = vault_params[3]
