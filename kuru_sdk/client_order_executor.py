@@ -1,6 +1,6 @@
-from web3 import Web3
 from web3 import AsyncWeb3
-from typing import Dict, List, Optional, Union
+from web3 import AsyncHTTPProvider
+from typing import Dict, List, Optional
 import asyncio
 
 from kuru_sdk.orderbook import Orderbook, TxOptions
@@ -9,27 +9,25 @@ from kuru_sdk.api import KuruAPI
 
 class ClientOrderExecutor:
     def __init__(self,
-                 web3: Union[Web3, AsyncWeb3],
+                 web3: AsyncWeb3,
                  contract_address: str,
                  private_key: Optional[str] = None,
                  kuru_api_url: Optional[str] = None,
              ):
         
-        # Use orderbook with async-compatible web3
-        self.orderbook = Orderbook(web3, contract_address, private_key)
-        self.kuru_api = KuruAPI(kuru_api_url)
-        
-        # Always use AsyncWeb3
-        from web3 import AsyncHTTPProvider
-        if isinstance(web3, AsyncWeb3):
-            # Already async, just use it
-            self.web3 = web3
-        elif hasattr(web3.provider, 'endpoint_uri'):
-            # Convert to AsyncWeb3
-            endpoint = web3.provider.endpoint_uri
-            self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+        # Ensure we have an AsyncWeb3 instance
+        if not isinstance(web3, AsyncWeb3):
+            if hasattr(web3, 'provider') and hasattr(web3.provider, 'endpoint_uri'):
+                endpoint = web3.provider.endpoint_uri
+                self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+            else:
+                raise ValueError("Cannot determine provider endpoint for Web3 instance")
         else:
-            raise ValueError("Cannot determine provider endpoint for Web3 instance")
+            self.web3 = web3
+        
+        # Use orderbook with async web3
+        self.orderbook = Orderbook(self.web3, contract_address, private_key)
+        self.kuru_api = KuruAPI(kuru_api_url)
             
         # Store account info
         if private_key:

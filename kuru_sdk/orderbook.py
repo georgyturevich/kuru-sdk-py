@@ -1,7 +1,7 @@
 from math import ceil, floor, log10
-from web3 import Web3
 from web3 import AsyncWeb3
-from typing import Optional, List, Tuple, Dict, Any, Union
+from web3 import AsyncHTTPProvider
+from typing import Optional, List, Tuple, Dict, Any
 import json
 import os
 import asyncio
@@ -14,7 +14,7 @@ from .types import MarketParams, OrderCreatedEvent, TxOptions, L2Book, Formatted
 class Orderbook:
     def __init__(
         self,
-        web3: Union[Web3, AsyncWeb3],
+        web3: AsyncWeb3,
         contract_address: str,
         private_key: Optional[str] = None
     ):
@@ -24,29 +24,27 @@ class Orderbook:
         
         Initialize the Orderbook SDK
         Args:
-            web3: Web3 or AsyncWeb3 instance
+            web3: AsyncWeb3 instance
             contract_address: Address of the deployed Orderbook contract
             private_key: Private key for signing transactions (optional)
         """
-        self.contract_address = Web3.to_checksum_address(contract_address)
+        # Ensure we have an AsyncWeb3 instance
+        if not isinstance(web3, AsyncWeb3):
+            if hasattr(web3, 'provider') and hasattr(web3.provider, 'endpoint_uri'):
+                endpoint = web3.provider.endpoint_uri
+                self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+            else:
+                raise ValueError("Cannot determine provider endpoint for Web3 instance")
+        else:
+            self.web3 = web3
+            
+        self.contract_address = AsyncWeb3.to_checksum_address(contract_address)
         self.private_key = private_key
         
         # Load ABI from JSON file
         with open(os.path.join(os.path.dirname(__file__), 'abi/orderbook.json'), 'r') as f:
             contract_abi = json.load(f)
         
-        # Always use AsyncWeb3
-        from web3 import AsyncHTTPProvider
-        if isinstance(web3, AsyncWeb3):
-            # Already async, just use it
-            self.web3 = web3
-        elif hasattr(web3.provider, 'endpoint_uri'):
-            # Convert to AsyncWeb3
-            endpoint = web3.provider.endpoint_uri
-            self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
-        else:
-            raise ValueError("Cannot determine provider endpoint for Web3 instance")
-            
         # Create contract interfaces
         self.contract = self.web3.eth.contract(
             address=self.contract_address,
@@ -61,28 +59,34 @@ class Orderbook:
         self.market_params = self._fetch_market_params()
 
     def _fetch_market_params(self) -> MarketParams:
-        params = self.contract.functions.getMarketParams().call()
-        return MarketParams(
-            price_precision=params[0],
-            size_precision=params[1],
-            base_asset=params[2],
-            base_asset_decimals=params[3],
-            quote_asset=params[4],
-            quote_asset_decimals=params[5],
-            tick_size=params[6],
-            min_size=params[7],
-            max_size=params[8],
-            taker_fee_bps=params[9],
-            maker_fee_bps=params[10]
-        )
+        """
+        Fetch market parameters synchronously for initialization.
+        This is a special case for init-time data fetching only.
+        """
+        import asyncio
+        # Create a new event loop for this synchronous call
+        loop = asyncio.new_event_loop()
+        try:
+            params = loop.run_until_complete(self.contract.functions.getMarketParams().call())
+            return MarketParams(
+                price_precision=params[0],
+                size_precision=params[1],
+                base_asset=params[2],
+                base_asset_decimals=params[3],
+                quote_asset=params[4],
+                quote_asset_decimals=params[5],
+                tick_size=params[6],
+                min_size=params[7],
+                max_size=params[8],
+                taker_fee_bps=params[9],
+                maker_fee_bps=params[10]
+            )
+        finally:
+            loop.close()
         
-    async def _async_fetch_market_params(self) -> MarketParams:
-        """Async version of _fetch_market_params"""
-        if self.is_async:
-            params = await self.contract.functions.getMarketParams().call()
-        else:
-            params = await self.async_contract.functions.getMarketParams().call()
-            
+    async def fetch_market_params(self) -> MarketParams:
+        """Async method to fetch market parameters"""
+        params = await self.contract.functions.getMarketParams().call()
         return MarketParams(
             price_precision=params[0],
             size_precision=params[1],
