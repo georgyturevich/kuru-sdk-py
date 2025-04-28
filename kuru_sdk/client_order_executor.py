@@ -48,7 +48,6 @@ class ClientOrderExecutor:
                         price=order.price,
                         size=order.size,
                         post_only=order.post_only,
-                        tick_normalization=order.tick_normalization,
                         tx_options=tx_options
                     )
                 else:  # sell
@@ -56,7 +55,6 @@ class ClientOrderExecutor:
                         price=order.price,
                         size=order.size,
                         post_only=order.post_only,
-                        tick_normalization=order.tick_normalization,
                         tx_options=tx_options
                     )
             else:  # market
@@ -90,6 +88,7 @@ class ClientOrderExecutor:
 
             if receipt.status == 1:
                 if cloid:
+                    self.cloid_to_order[cloid] = order
                     order_id = self.orderbook.get_order_id_from_receipt(receipt)
                     print(f"Order ID: {order_id}")
                     if order_id:
@@ -175,6 +174,10 @@ class ClientOrderExecutor:
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
 
         if receipt.status == 1:
+            for order in orders:
+                if order.cloid:
+                    self.cloid_to_order[order.cloid] = order
+            
             order_created_events = self.orderbook.decode_logs(receipt)
             self.match_orders_with_events(orders, order_created_events)
             print(f"Transaction successful for batch orders, tx_hash: {receipt.transactionHash.hex()}")
@@ -183,9 +186,6 @@ class ClientOrderExecutor:
         else:
             raise Exception(f"Batch order failed: Transaction status {receipt.status}, receipt: {receipt}")
 
-
-    def get_order_id_by_cloid(self, cloid: str) -> int:
-        return self.cloid_to_order_id[cloid]
 
     def match_orders_with_events(self, orders: List[OrderRequest], events: List[OrderCreatedEvent]) -> List[OrderRequest]:
         """
@@ -196,7 +196,7 @@ class ClientOrderExecutor:
             if order.order_type == "cancel" or order.order_type == "market":
                 continue
             for event in events:
-                if order.price * self.orderbook.market_params.price_precision == event.price and order.side == ("buy" if event.is_buy else "sell"):
+                if str(order.price * self.orderbook.market_params.price_precision) == str(event.price) and order.side == ("buy" if event.is_buy else "sell"):
                     self.cloid_to_order_id[order.cloid] = event.order_id
                     self.order_id_to_cloid[event.order_id] = order.cloid
     
@@ -205,10 +205,10 @@ class ClientOrderExecutor:
         return await self.orderbook.get_l2_book()
     
     def get_order_by_cloid(self, cloid: str) -> OrderRequest:
-        return self.cloid_to_order[cloid]
+        return self.cloid_to_order.get(cloid)
     
     def get_order_id_by_cloid(self, cloid: str) -> int:
-        return self.cloid_to_order_id[cloid]
+        return self.cloid_to_order_id.get(cloid)
 
 
     ## Kuru API

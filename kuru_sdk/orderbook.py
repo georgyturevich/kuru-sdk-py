@@ -75,7 +75,7 @@ class Orderbook:
     ) -> Dict:
         """Helper method to prepare transaction parameters"""
         func = getattr(self.contract.functions, function_name)(*args)
-
+        print(f"func: {func}")
         tx = {
             'to': self.contract_address,
             'value': value,
@@ -153,7 +153,7 @@ class Orderbook:
 
         return await self._prepare_transaction(
             "addBuyOrder",
-            [price_normalized, size_normalized, post_only],
+            [int(price_normalized), int(size_normalized), post_only],
             tx_options
         )
 
@@ -179,17 +179,25 @@ class Orderbook:
         tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
-        if tick_normalization == "round_up":
-            price = self.market_params.tick_size * ceil(float(price) / self.market_params.tick_size)
-        elif tick_normalization == "round_down":
-            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
-        else:
-            price = price
-
+        
         price_normalized, size_normalized = self.normalize_with_precision(price, size)
+
+        price_mod = price_normalized % self.market_params.tick_size
+
+        if tick_normalization == "round_up":
+            # round up to the nearest tick
+            if price_mod > 0:
+                price_normalized = price_normalized + (self.market_params.tick_size - price_mod)
+        elif tick_normalization == "round_down":
+            # round down to the nearest tick
+            price_normalized = price_normalized - price_mod
+        else:
+            # no normalization then clip the price if it's not divisible by the tick size 
+            price_normalized = price_normalized - price_mod
+
         return await self._prepare_transaction(
             "addSellOrder",
-            [price_normalized, size_normalized, post_only],
+            [int(price_normalized), int(size_normalized), post_only],
             tx_options
         )
 
@@ -203,6 +211,7 @@ class Orderbook:
     ) -> str:
         try:
             tx = await self.prepare_sell_order(price, size, post_only, tick_normalization, tx_options)
+            print(f"tx: {tx}")
             return await self._execute_transaction(tx)
         except Exception as e:
             raise Exception(f"Error adding sell order: {get_error_message(str(e))}")

@@ -46,18 +46,11 @@ async def main():
 
     async def shutdown(sig): 
         print(f"\nReceived exit signal {sig.name}...")
-        print("Disconnecting client...")
-        try:
-            await client.disconnect()
-        except Exception as e:
-            print(f"Error during disconnect: {e}")
-        finally:
-            print("Client disconnected.")
-            shutdown_event.set_result(True)
-            # Optional: Clean up signal handlers
-            loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.remove_signal_handler(sig)
+        shutdown_event.set_result(True)
+        # Optional: Clean up signal handlers
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.remove_signal_handler(sig)
 
     # Add signal handlers
     loop = asyncio.get_running_loop()
@@ -65,9 +58,6 @@ async def main():
         loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
 
     try:
-        print("Connecting client...")
-        await client.connect()
-        print("Client connected.")
 
         ## Batch orders
         orders = [
@@ -99,6 +89,9 @@ async def main():
         
         tx_hash = await client.batch_orders(orders)
         print(f"Batch order transaction hash: {tx_hash}")
+
+        order_id = client.get_order_id_by_cloid("mm_1")
+        print(f"Order ID: {order_id}")
 
         await asyncio.sleep(3)
 
@@ -139,7 +132,6 @@ async def main():
         # Ensure disconnect is called even if there's an error before shutdown_event is awaited
         if not shutdown_event.done():
             print("Performing cleanup due to unexpected exit...")
-            await client.disconnect()
             print("Client disconnected.")
 
 if __name__ == "__main__":
