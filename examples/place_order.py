@@ -41,7 +41,7 @@ async def main():
         web3=Web3(Web3.HTTPProvider(NETWORK_RPC)),
         contract_address=ADDRESSES['orderbook'],
         private_key=os.getenv("PK"),
-        websocket_url="wss://ws.testnet.kuru.io"
+        kuru_api_url="https://api.kuru.io"
     )
 
     async def shutdown(sig): 
