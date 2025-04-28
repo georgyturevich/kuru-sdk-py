@@ -2,7 +2,7 @@ from web3 import Web3
 
 from kuru_sdk.orderbook import Orderbook, TxOptions
 from typing import Dict, List, Optional
-from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderPriceSize, OrderRequest
+from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderPriceSize, OrderRequest, OrderResponse, TradeResponse
 from kuru_sdk.api import KuruAPI
 
 class ClientOrderExecutor:
@@ -18,24 +18,12 @@ class ClientOrderExecutor:
         self.kuru_api = KuruAPI(kuru_api_url)
         self.wallet_address = self.web3.eth.account.from_key(private_key).address
         
+        self.market_address = contract_address
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
         self.order_id_to_cloid: Dict[int, str] = {}
         self.cloid_to_order: Dict[str, OrderRequest] = {}
 
-    # async def connect(self):
-    #     if self.websocket_handler:
-    #         # Start the websocket connection in the background
-    #         asyncio.create_task(self.websocket_handler.connect())
-    #         await asyncio.sleep(2)
-    #     else:
-    #         print("No websocket handler provided")
-
-    # async def disconnect(self):
-    #     if self.websocket_handler:
-    #         await self.websocket_handler.disconnect()
-    #     else:
-    #         print("No websocket handler provided")
 
     async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
@@ -194,9 +182,6 @@ class ClientOrderExecutor:
             return receipt.transactionHash.hex()
         else:
             raise Exception(f"Batch order failed: Transaction status {receipt.status}, receipt: {receipt}")
-        
-
-    # async def cancel_all_active_orders_for_market(self, tx_options: Optional[TxOptions] = TxOptions()):
 
 
     def get_order_id_by_cloid(self, cloid: str) -> int:
@@ -227,20 +212,20 @@ class ClientOrderExecutor:
 
 
     ## Kuru API
-    async def get_order_history(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
+    async def get_order_history(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> OrderResponse:
         return self.kuru_api.get_order_history(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
     
-    async def get_trades(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> List[Order]:
+    async def get_trades(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> TradeResponse:
         return self.kuru_api.get_trades(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
     
-    async def get_orders_by_ids(self, order_ids: List[int]) -> List[Order]:
+    async def get_orders_by_ids(self, order_ids: List[int]) -> OrderResponse:
         return self.kuru_api.get_orders_by_ids(self.market_address, order_ids)
 
-    async def get_orders_by_cloids(self, cloids: List[str]) -> List[Order]:
+    async def get_orders_by_cloids(self, cloids: List[str]) -> OrderResponse:
         order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
         return self.get_orders_by_ids(order_ids)
     
-    async def get_user_orders(self) -> List[Order]:
+    async def get_user_orders(self) -> OrderResponse:
         return self.kuru_api.get_user_orders(self.wallet_address)
     
     

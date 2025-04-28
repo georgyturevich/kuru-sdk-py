@@ -1,4 +1,4 @@
-web3==7.6.0
+web3[async]==7.6.0
 eth-typing>=3.5.0
 eth-utils>=2.3.0
 python-dotenv==1.0.0

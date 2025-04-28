@@ -64,7 +64,7 @@ class Orderbook:
             size_normalized = float(size) * float(str(self.market_params.size_precision))
             return (int(price_normalized), int(size_normalized))
         except (ValueError, TypeError) as e:
-            raise "Error normalizing values: " + str(e)
+            raise ValueError("Error normalizing values: " + str(e))
 
     async def _prepare_transaction(
         self, 
@@ -125,7 +125,7 @@ class Orderbook:
             
             return tx_hash.hex()
         except Exception as e:
-            raise "Error executing transaction: " + str(e)
+            raise RuntimeError("Error executing transaction: " + str(e))
 
     async def prepare_buy_order(
         self,
@@ -369,38 +369,25 @@ class Orderbook:
         except Exception as e:
             raise Exception(f"Error batching orders: {get_error_message(str(e))}")
 
-    async def get_vault_params(self) -> Dict[str, Any]:
+    async def get_vault_params(self) -> VaultParams:
         """Fetch vault parameters from the contract"""
         try:
             # Call the contract function to get vault parameters
             vault_params = await self.contract.functions.getVaultParams().call()
 
-            return {
-                'kuru_amm_vault': vault_params[0],
-                'vault_best_bid': int(vault_params[1]),
-                'bid_partially_filled_size': int(vault_params[2]),
-                'vault_best_ask': int(vault_params[3]),
-                'ask_partially_filled_size': int(vault_params[4]),
-                'vault_bid_order_size': int(vault_params[5]),
-                'vault_ask_order_size': int(vault_params[6]),
-                'spread': int(vault_params[7])
-            }
+            return VaultParams(
+                kuru_amm_vault=vault_params[0],
+                vault_best_bid=vault_params[1],
+                bid_partially_filled_size=vault_params[2],
+                vault_best_ask=vault_params[3],
+                ask_partially_filled_size=vault_params[4],
+                vault_bid_order_size=vault_params[5],
+                vault_ask_order_size=vault_params[6],
+                spread=vault_params[7]
+            )
         except Exception as e:
-            raise "Error fetching vault parameters: " + str(e)
-        
-    async def get_vault_params_from_contract(self) -> VaultParams:
-        """Fetch vault parameters from the contract"""
-        vault_params = self.contract.functions.getVaultParams().call()
-        return VaultParams(
-            kuru_amm_vault=vault_params[0],
-            vault_best_bid=vault_params[1],
-            bid_partially_filled_size=vault_params[2],
-            vault_best_ask=vault_params[3],
-            ask_partially_filled_size=vault_params[4],
-            vault_bid_order_size=vault_params[5],
-            vault_ask_order_size=vault_params[6],
-            spread=vault_params[7]
-        )
+            raise Exception("Error fetching vault parameters: " + str(e))
+            
     
     async def fetch_orderbook(self) -> L2Book:
         """
@@ -463,7 +450,7 @@ class Orderbook:
         buy_orders = [OrderPriceSize(price=floor(order.price * 10**total_decimals) / 10**total_decimals, size=order.size) for order in buy_orders]
         sell_orders = [OrderPriceSize(price=ceil(order.price * 10**total_decimals) / 10**total_decimals, size=order.size) for order in sell_orders]
         
-        vault_params = await self.get_vault_params_from_contract()
+        vault_params = await self.get_vault_params()
 
         return L2Book(
             block_num=block_num,
