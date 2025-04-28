@@ -96,6 +96,11 @@
   },
   {
     "inputs": [],
+    "name": "ProvisionError",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "SizeError",
     "type": "error"
   },
@@ -128,6 +133,147 @@
     "inputs": [],
     "name": "UpgradeFailed",
     "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "WrongOrderTypeCancel",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "orderId",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "flippedId",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "size",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "price",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "flippedPrice",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "isBuy",
+        "type": "bool"
+      }
+    ],
+    "name": "FlipOrderCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "orderId",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "size",
+        "type": "uint96"
+      }
+    ],
+    "name": "FlipOrderUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint40[]",
+        "name": "orderIds",
+        "type": "uint40[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "FlipOrdersCanceled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "orderId",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "flippedId",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "size",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "price",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "flippedPrice",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "isBuy",
+        "type": "bool"
+      }
+    ],
+    "name": "FlippedOrderCreated",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -342,6 +488,90 @@
         "type": "uint32"
       },
       {
+        "internalType": "uint32",
+        "name": "_flippedPrice",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint96",
+        "name": "_size",
+        "type": "uint96"
+      },
+      {
+        "internalType": "bool",
+        "name": "_provisionOrRevert",
+        "type": "bool"
+      }
+    ],
+    "name": "addFlipBuyOrder",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint32",
+        "name": "_price",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "_flippedPrice",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint96",
+        "name": "_size",
+        "type": "uint96"
+      },
+      {
+        "internalType": "bool",
+        "name": "_provisionOrRevert",
+        "type": "bool"
+      }
+    ],
+    "name": "addFlipSellOrder",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint32",
+        "name": "_bidPrice",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "_askPrice",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint96",
+        "name": "_bidSize",
+        "type": "uint96"
+      },
+      {
+        "internalType": "uint96",
+        "name": "_askSize",
+        "type": "uint96"
+      }
+    ],
+    "name": "addPairedLiquidity",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint32",
+        "name": "_price",
+        "type": "uint32"
+      },
+      {
         "internalType": "uint96",
         "name": "size",
         "type": "uint96"
@@ -360,12 +590,86 @@
   {
     "inputs": [
       {
+        "internalType": "uint32[]",
+        "name": "bidPrices",
+        "type": "uint32[]"
+      },
+      {
+        "internalType": "uint32[]",
+        "name": "askPrices",
+        "type": "uint32[]"
+      },
+      {
+        "internalType": "uint96[]",
+        "name": "bidSizes",
+        "type": "uint96[]"
+      },
+      {
+        "internalType": "uint96[]",
+        "name": "askSizes",
+        "type": "uint96[]"
+      }
+    ],
+    "name": "batchAddPairedLiquidity",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint40[]",
+        "name": "_orderIds",
+        "type": "uint40[]"
+      }
+    ],
+    "name": "batchCancelFlipOrders",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint40[]",
         "name": "_orderIds",
         "type": "uint40[]"
       }
     ],
     "name": "batchCancelOrders",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint32[]",
+        "name": "prices",
+        "type": "uint32[]"
+      },
+      {
+        "internalType": "uint32[]",
+        "name": "flipPrices",
+        "type": "uint32[]"
+      },
+      {
+        "internalType": "uint96[]",
+        "name": "sizes",
+        "type": "uint96[]"
+      },
+      {
+        "internalType": "bool[]",
+        "name": "isBuy",
+        "type": "bool[]"
+      },
+      {
+        "internalType": "bool",
+        "name": "_provisionOrRevert",
+        "type": "bool"
+      }
+    ],
+    "name": "batchProvisionLiquidity",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -943,8 +1247,18 @@
         "type": "uint40"
       },
       {
+        "internalType": "uint40",
+        "name": "flippedId",
+        "type": "uint40"
+      },
+      {
         "internalType": "uint32",
         "name": "price",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "flippedPrice",
         "type": "uint32"
       },
       {
