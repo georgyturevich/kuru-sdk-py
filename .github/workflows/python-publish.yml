@@ -2,8 +2,8 @@ name: Upload Python Package
 
 on:
   push:
-    tags:
-      - 'v*.*.*' # Trigger on version tags like v1.0.0
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -29,4 +29,4 @@ jobs:
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: twine upload dist/* 
+      run: twine upload dist/*
