@@ -2,6 +2,13 @@
 
 A Python SDK for interacting with the Kuru protocol, enabling market makers to manage orders, interact with margin accounts, and query exchange data.
 
+
+## Create a venv
+
+```
+python -m venv kuru-venv
+```
+
 ## Installation
 
 To install the Kuru SDK, you can use pip:
