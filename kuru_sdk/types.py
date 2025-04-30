@@ -49,6 +49,7 @@ class OrderCreatedEvent:
 @dataclass
 class OrderCreatedPayload:
     order_id: int
+    cloid: str
     market_address: str
     owner: str
     price: str
@@ -65,6 +66,7 @@ class OrderCreatedPayload:
 @dataclass
 class TradePayload:
     order_id: int
+    cloid: str
     market_address: str
     maker_address: str
     is_buy: bool
@@ -81,6 +83,7 @@ class TradePayload:
 @dataclass
 class OrderCancelledPayload:
     order_ids: List[int]
+    cloids: List[str]
     maker_address: str
     canceled_orders_data: List[OrderCreatedPayload]
 @dataclass

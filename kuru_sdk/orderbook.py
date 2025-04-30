@@ -3,6 +3,8 @@ from web3 import Web3
 from typing import Optional, List, Tuple, Dict, Any
 import json
 import os
+import logging
+import asyncio
 
 from kuru_sdk.utils import get_error_message
 
@@ -14,7 +16,8 @@ class Orderbook:
         self,
         web3: Web3,
         contract_address: str,
-        private_key: Optional[str] = None
+        private_key: Optional[str] = None,
+        logger: Optional[logging.Logger] = None
     ):
         """
         Orderbook class
@@ -25,10 +28,17 @@ class Orderbook:
             web3: Web3 instance
             contract_address: Address of the deployed Orderbook contract
             private_key: Private key for signing transactions (optional)
+            logger: Logger instance (optional)
         """
         self.web3 = web3
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.private_key = private_key
+        
+        # Set up logger
+        if isinstance(logger, logging.Logger):
+            self.logger = logger
+        else:
+            self.logger = logging.getLogger(__name__)
         
         # Load ABI from JSON file
         with open(os.path.join(os.path.dirname(__file__), 'abi/orderbook.json'), 'r') as f:
@@ -40,6 +50,14 @@ class Orderbook:
         )
         
         self.market_params = self._fetch_market_params()
+
+    def _log_info(self, message):
+        """Log info message"""
+        self.logger.info(message)
+    
+    def _log_error(self, message):
+        """Log error message"""
+        self.logger.error(message)
 
     def _fetch_market_params(self) -> MarketParams:
         params = self.contract.functions.getMarketParams().call()
@@ -57,10 +75,23 @@ class Orderbook:
             maker_fee_bps=params[10]
         )
 
-    def normalize_with_precision(self, price: str, size: str) -> Tuple[int, int]:
+    def normalize_with_precision_and_tick(
+            self,
+            price: str,
+            size: str,
+            tick_normalization: Optional[str] = None
+    ) -> Tuple[int, int]:
         """Normalize price and size with contract precision"""
         try:
             price_normalized = float(price) * float(str(self.market_params.price_precision))
+
+            if tick_normalization == "round_up":
+                price_normalized = price_normalized + (self.market_params.tick_size - price_normalized % self.market_params.tick_size)
+            elif tick_normalization == "round_down":
+                price_normalized = price_normalized - (price_normalized % self.market_params.tick_size)
+            else:
+                price_normalized = price_normalized - (price_normalized % self.market_params.tick_size)
+
             size_normalized = float(size) * float(str(self.market_params.size_precision))
             return (int(price_normalized), int(size_normalized))
         except (ValueError, TypeError) as e:
@@ -85,18 +116,17 @@ class Orderbook:
             'chainId': self.web3.eth.chain_id
         }
 
-        # Get base fee from latest block
-        base_fee = self.web3.eth.get_block('latest')['baseFeePerGas']
-
         # Set maxPriorityFeePerGas (tip) and maxFeePerGas
         if tx_options.gas_price is not None:
             tx['maxFeePerGas'] = tx_options.gas_price
-            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or min(tx_options.gas_price - base_fee, tx_options.gas_price // 4)
+            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or 1
         else:
             # Default to 2x current base fee for maxFeePerGas
-            tx['maxFeePerGas'] = base_fee * 2
-            # Default priority fee (can be adjusted based on network conditions)
+            # Get base fee from latest block
+            base_fee = self.web3.eth.get_block('latest')['baseFeePerGas']
             tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or self.web3.eth.max_priority_fee
+            tx['maxFeePerGas'] = base_fee + tx['maxPriorityFeePerGas']
+            # Default priority fee (can be adjusted based on network conditions)
 
         # Ensure maxPriorityFeePerGas is not greater than maxFeePerGas
         if tx['maxPriorityFeePerGas'] > tx['maxFeePerGas']:
@@ -114,16 +144,42 @@ class Orderbook:
             tx['nonce'] = self.web3.eth.get_transaction_count(tx['from'])
         return tx
 
-    async def _execute_transaction(self, tx: Dict) -> Tuple[str, Optional[int]]:
-        """Execute prepared transaction and return hash and order ID if applicable"""
+    async def _execute_transaction(self, tx: Dict, async_execution: bool = False) -> str:
+        """
+        Execute prepared transaction and return hash
+        
+        Args:
+            tx: The transaction to execute
+            async_execution: If True, send transaction asynchronously without waiting for response
+        
+        Returns:
+            Transaction hash
+        """
         try:
             if self.private_key:
                 signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
-                tx_hash = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                # Get the hash from the signed transaction
+                tx_hash_from_signed = signed_tx.hash.hex()
+                self._log_info(f"tx_hash_from_signed: {tx_hash_from_signed}")
+                
+                if async_execution:
+                    async def send_tx_background():
+                        try:
+                            self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                        except Exception as e:
+                            self._log_error(f"Background transaction submission error: {e}")
+                    
+                    # Create a task that runs in the background
+                    asyncio.create_task(send_tx_background())
+                else:
+                    # Send synchronously
+                    self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                
+                return tx_hash_from_signed
             else:
+                # For non-private key transactions
                 tx_hash = self.web3.eth.send_transaction(tx)
-            
-            return tx_hash.hex()
+                return tx_hash.hex()
         except Exception as e:
             raise RuntimeError("Error executing transaction: " + str(e))
 
@@ -136,20 +192,7 @@ class Orderbook:
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
 
-        price_normalized, size_normalized = self.normalize_with_precision(price, size)
-
-        price_mod = price_normalized % self.market_params.tick_size
-
-        if tick_normalization == "round_up":
-            # round up to the nearest tick
-            if price_mod > 0:
-                price_normalized = price_normalized + (self.market_params.tick_size - price_mod)
-        elif tick_normalization == "round_down":
-            # round down to the nearest tick
-            price_normalized = price_normalized - price_mod
-        else:
-            # no normalization then clip the price if it's not divisible by the tick size 
-            price_normalized = price_normalized - price_mod
+        price_normalized, size_normalized = self.normalize_with_precision_and_tick(price, size, tick_normalization)
 
         return await self._prepare_transaction(
             "addBuyOrder",
@@ -163,11 +206,12 @@ class Orderbook:
         size: str,
         post_only: bool,
         tick_normalization: Optional[str] = None,
-        tx_options: TxOptions = TxOptions()
+        tx_options: TxOptions = TxOptions(),
+        async_execution: bool = False
     ) -> str:
         try:
             tx = await self.prepare_buy_order(price, size, post_only, tick_normalization, tx_options)
-            return await self._execute_transaction(tx)
+            return await self._execute_transaction(tx, async_execution)
         except Exception as e:
             raise Exception(f"Error adding buy order: {get_error_message(str(e))}")
 
@@ -179,14 +223,7 @@ class Orderbook:
         tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
-        if tick_normalization == "round_up":
-            price = self.market_params.tick_size * ceil(float(price) / self.market_params.tick_size)
-        elif tick_normalization == "round_down":
-            price = self.market_params.tick_size * floor(float(price) / self.market_params.tick_size)
-        else:
-            price = price
-
-        price_normalized, size_normalized = self.normalize_with_precision(price, size)
+        price_normalized, size_normalized = self.normalize_with_precision_and_tick(price, size, tick_normalization)
         return await self._prepare_transaction(
             "addSellOrder",
             [price_normalized, size_normalized, post_only],
@@ -199,11 +236,12 @@ class Orderbook:
         size: str,
         post_only: bool,
         tick_normalization: Optional[str] = None,
-        tx_options: TxOptions = TxOptions()
+        tx_options: TxOptions = TxOptions(),
+        async_execution: bool = False
     ) -> str:
         try:
             tx = await self.prepare_sell_order(price, size, post_only, tick_normalization, tx_options)
-            return await self._execute_transaction(tx)
+            return await self._execute_transaction(tx, async_execution)
         except Exception as e:
             raise Exception(f"Error adding sell order: {get_error_message(str(e))}")
 
@@ -221,11 +259,12 @@ class Orderbook:
     async def batch_cancel_orders(
         self,
         order_ids: List[int],
-        tx_options: TxOptions = TxOptions()
+        tx_options: TxOptions = TxOptions(),
+        async_execution: bool = False
     ) -> str:
         try:
             tx = await self.prepare_batch_cancel_orders(order_ids, tx_options)
-            tx_hash = await self._execute_transaction(tx)
+            tx_hash = await self._execute_transaction(tx, async_execution)
             return tx_hash
         except Exception as e:
             raise Exception(f"Error batch canceling orders: {get_error_message(str(e))}")
@@ -259,13 +298,14 @@ class Orderbook:
         min_amount_out: str,
         is_margin: bool,
         fill_or_kill: bool,
-        tx_options: TxOptions = TxOptions()
+        tx_options: TxOptions = TxOptions(),
+        async_execution: bool = False
     ) -> str:
         tx = await self.prepare_market_buy(
             size, min_amount_out, is_margin, fill_or_kill, 
             tx_options
         )
-        tx_hash = await self._execute_transaction(tx)
+        tx_hash = await self._execute_transaction(tx, async_execution)
         return tx_hash
 
     async def prepare_market_sell(
@@ -297,14 +337,15 @@ class Orderbook:
         min_amount_out: str,
         is_margin: bool,
         fill_or_kill: bool,
-        tx_options: TxOptions = TxOptions()
+        tx_options: TxOptions = TxOptions(),
+        async_execution: bool = False
     ) -> str:
         try:
             tx = await self.prepare_market_sell(
                 size, min_amount_out, is_margin, fill_or_kill,
                 tx_options
             )
-            tx_hash = await self._execute_transaction(tx)
+            tx_hash = await self._execute_transaction(tx, async_execution)
             return tx_hash
         except Exception as e:
             raise Exception(f"Error market selling: {get_error_message(str(e))}")
@@ -317,6 +358,7 @@ class Orderbook:
         sell_sizes: List[str],
         order_ids_to_cancel: List[str],
         post_only: bool,
+        tick_normalization: Optional[str] = None,
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
         normalized_buy_prices = []
@@ -325,12 +367,12 @@ class Orderbook:
         normalized_sell_sizes = []
         
         for price, size in zip(buy_prices, buy_sizes):
-            price_norm, size_norm = self.normalize_with_precision(price, size)
+            price_norm, size_norm = self.normalize_with_precision_and_tick(price, size, tick_normalization)
             normalized_buy_prices.append(price_norm)
             normalized_buy_sizes.append(size_norm)
             
         for price, size in zip(sell_prices, sell_sizes):
-            price_norm, size_norm = self.normalize_with_precision(price, size)
+            price_norm, size_norm = self.normalize_with_precision_and_tick(price, size, tick_normalization)
             normalized_sell_prices.append(price_norm)
             normalized_sell_sizes.append(size_norm)
 
@@ -357,14 +399,15 @@ class Orderbook:
         sell_sizes: Optional[List[str]] = [],
         order_ids_to_cancel: Optional[List[str]] = [],
         post_only: Optional[bool] = False,
-        tx_options: TxOptions = TxOptions()
+        tx_options: TxOptions = TxOptions(),
+        async_execution: bool = False
     ) -> str:
         try:
             tx = await self.prepare_batch_orders(
                 buy_prices, buy_sizes, sell_prices, sell_sizes,
-                order_ids_to_cancel, post_only, tx_options
+                order_ids_to_cancel, post_only, None, tx_options
             )
-            tx_hash = await self._execute_transaction(tx)
+            tx_hash = await self._execute_transaction(tx, async_execution)
             return tx_hash
         except Exception as e:
             raise Exception(f"Error batching orders: {get_error_message(str(e))}")
@@ -518,11 +561,11 @@ class Orderbook:
                 order_id = decoded_logs[0]['args']['orderId']
                 return order_id
             else:
-                print("No OrderCreated event found in the transaction receipt.")
+                self._log_error("No OrderCreated event found in the transaction receipt.")
                 return None
         except Exception as e:
             # Handle potential errors during decoding (e.g., event not found in ABI)
-            print(f"Error decoding logs from receipt: {e}")
+            self._log_error(f"Error decoding logs from receipt: {e}")
             return None
 
 
@@ -532,17 +575,17 @@ class Orderbook:
         for log in tx_logs:
             try:
                 order_created_event = self.contract.events.OrderCreated().process_log(log)
-                print(f"Order created event: {order_created_event}")
+                self._log_info(f"Order created event: {order_created_event}")
                 if order_created_event:
                     order_created_event = OrderCreatedEvent(
                         order_id=order_created_event['args']['orderId'],
-                    price=order_created_event['args']['price'],
-                    size=order_created_event['args']['size'],
-                    is_buy=order_created_event['args']['isBuy']
+                        price=order_created_event['args']['price'],
+                        size=order_created_event['args']['size'],
+                        is_buy=order_created_event['args']['isBuy']
                     )
                 order_created_events.append(order_created_event)
             except Exception as e:
-                print(f"Error decoding logs for order created event: {e}")
+                self._log_error(f"Error decoding logs for order created event: {e}")
                 continue
 
         return order_created_events
@@ -692,7 +735,7 @@ class Orderbook:
         elif event == "Trade":
             orderbook = self._reconcile_orderbook_for_trade(orderbook, payload)
 
-        print(f"Reconciled orderbook: {orderbook.vault_params}")
+        self._log_info(f"Reconciled orderbook: {orderbook.vault_params}")
         return orderbook
     
 
@@ -709,8 +752,8 @@ class Orderbook:
 
         if is_buy:
             price = floor((int(payload['price']) / self.market_params.price_precision) * 10**total_decimals) / 10**total_decimals 
-            print(f"Price: {price}")
-            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+            self._log_info(f"Price: {price}")
+            self._log_info("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
             # find the corresponding price in the buy_orders list
             for order in buy_orders:
                 if order.price == price:
@@ -788,24 +831,24 @@ class Orderbook:
             vault_params=orderbook.vault_params
         )
 
-        print(f"New orderbook: {new_orderbook.vault_params}")
+        self._log_info(f"New orderbook: {new_orderbook.vault_params}")
 
         total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)
 
         order_id = payload['orderId']
             
-        print(f"Order ID: {order_id}")
+        self._log_info(f"Order ID: {order_id}")
 
         if order_id == 0:
             # amm trade
-            print(f"Handling AMM trade")
+            self._log_info(f"Handling AMM trade")
             new_orderbook = self._handle_amm_trade(new_orderbook, payload)
         else:
             # regular trade
-            print(f"Handling regular trade")
+            self._log_info(f"Handling regular trade")
             new_orderbook = self._handle_regular_trade(new_orderbook, payload)
 
-        print(f"New orderbook: {new_orderbook.vault_params}")
+        self._log_info(f"New orderbook: {new_orderbook.vault_params}")
 
         return new_orderbook
 
@@ -817,7 +860,6 @@ class Orderbook:
         updated_size = int(payload['updatedSize'])
 
         if is_buy:
-
             if updated_size == 0:
                 orderbook.vault_params.vault_best_ask = (orderbook.vault_params.vault_best_ask * (1000 + SPREAD)) // 1000
                 orderbook.vault_params.vault_best_bid = (orderbook.vault_params.vault_best_bid * 1000) // (1000 + SPREAD)
@@ -825,7 +867,6 @@ class Orderbook:
                 orderbook.vault_params.vault_bid_order_size = (orderbook.vault_params.vault_ask_order_size * (2000 + SPREAD)) // 2000
                 orderbook.vault_params.ask_partially_filled_size = 0
                 orderbook.vault_params.bid_partially_filled_size = (orderbook.vault_params.bid_partially_filled_size * 1000) // (1000 + SPREAD)
-
             else:
                 orderbook.vault_params.ask_partially_filled_size = orderbook.vault_params.vault_ask_order_size - updated_size
             
@@ -840,10 +881,10 @@ class Orderbook:
             else:
                 orderbook.vault_params.bid_partially_filled_size = orderbook.vault_params.vault_bid_order_size - updated_size
             
-        print(f"Acquired vault params: {orderbook.vault_params}")
+        self._log_info(f"Acquired vault params: {orderbook.vault_params}")
         amm_prices = self._get_amm_prices_for_vault(orderbook.vault_params)
         
-        print(f"Acquired AMM prices")
+        self._log_info(f"Acquired AMM prices")
         orderbook.amm_buy_orders = amm_prices[0]
         orderbook.amm_sell_orders = amm_prices[1]
 
