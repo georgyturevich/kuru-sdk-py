@@ -23,6 +23,7 @@ wheels/
 kuru-py-env/
 venv/
 ENV/
+kuru_venv/
 
 # IDE
 .idea/
