@@ -1,9 +1,11 @@
+from eth_account.signers.local import LocalAccount
 from web3 import AsyncWeb3
 from web3 import AsyncHTTPProvider
 from typing import Optional
 import json
 import os
 
+from web3.contract import AsyncContract
 
 # Load ERC20 ABI
 with open(os.path.join(os.path.dirname(__file__), 'abi/ierc20.json'), 'r') as f:
@@ -49,12 +51,12 @@ class MarginAccount:
         
         # Store account for transaction signing
         if self.private_key:
-            self.account = web3.eth.account.from_key(self.private_key)
+            self.account: LocalAccount = web3.eth.account.from_key(self.private_key)
             self.wallet_address = self.account.address
         
         # Token contract cache
-        self.token_contracts = {}
-        
+        self.token_contracts: dict[str, AsyncContract] = {}
+
         # Native token address constant
         self.NATIVE = "0x0000000000000000000000000000000000000000"
 
@@ -74,7 +76,7 @@ class MarginAccount:
         Returns:
             transaction_hash: Hash of the submitted transaction
         """
-        token = Web3.to_checksum_address(token)
+        token = AsyncWeb3.to_checksum_address(token)
         
         # Check if token is not native and needs approval
         if token != self.NATIVE:
@@ -99,7 +101,7 @@ class MarginAccount:
                 nonce = await self.web3.eth.get_transaction_count(self.wallet_address)
                 
                 # Build approval transaction
-                allowance_tx = token_contract.functions.approve(
+                allowance_tx = await token_contract.functions.approve(
                     self.contract_address, amount
                 ).build_transaction({
                     'from': self.wallet_address,
@@ -141,7 +143,7 @@ class MarginAccount:
         
         if self.private_key:
             # Sign and send transaction
-            raw_transaction = transaction.build_transaction(transaction_dict)
+            raw_transaction = await transaction.build_transaction(transaction_dict)
             signed_txn = self.account.sign_transaction(raw_transaction)
             tx_hash = await self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
             print(f"Deposit transaction submitted: {tx_hash.hex()}")
@@ -165,7 +167,7 @@ class MarginAccount:
         Returns:
             transaction_hash: Hash of the submitted transaction
         """
-        token = Web3.to_checksum_address(token)
+        token = AsyncWeb3.to_checksum_address(token)
         
         # Build transaction
         transaction = self.contract.functions.withdraw(
@@ -188,7 +190,7 @@ class MarginAccount:
         
         if self.private_key:
             # Sign and send transaction
-            raw_transaction = transaction.build_transaction(transaction_dict)
+            raw_transaction = await transaction.build_transaction(transaction_dict)
             signed_txn = self.account.sign_transaction(raw_transaction)
             tx_hash = await self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         else:

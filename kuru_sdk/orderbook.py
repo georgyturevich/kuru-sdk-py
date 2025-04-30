@@ -56,7 +56,10 @@ class Orderbook:
             self.account = web3.eth.account.from_key(self.private_key)
             
         # Load market parameters synchronously at init time
-        self.market_params = self._fetch_market_params()
+        self.market_params = None
+
+    def set_market_params(self, market_params: MarketParams):
+        self.market_params = market_params
 
     def _fetch_market_params(self) -> MarketParams:
         """
@@ -66,6 +69,8 @@ class Orderbook:
         import asyncio
         # Create a new event loop for this synchronous call
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
         try:
             params = loop.run_until_complete(self.contract.functions.getMarketParams().call())
             return MarketParams(
@@ -126,11 +131,11 @@ class Orderbook:
             'data': func._encode_transaction_data(),
             'from': self.web3.eth.account.from_key(self.private_key).address,
             'type': '0x2',  # EIP-1559 transaction type
-            'chainId': self.web3.eth.chain_id
+            'chainId': await self.web3.eth.chain_id
         }
 
         # Get base fee from latest block
-        base_fee = self.web3.eth.get_block('latest')['baseFeePerGas']
+        base_fee = (await self.web3.eth.get_block('latest'))['baseFeePerGas']
 
         # Set maxPriorityFeePerGas (tip) and maxFeePerGas
         if tx_options.gas_price is not None:
@@ -140,14 +145,14 @@ class Orderbook:
             # Default to 2x current base fee for maxFeePerGas
             tx['maxFeePerGas'] = base_fee * 2
             # Default priority fee (can be adjusted based on network conditions)
-            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or self.web3.eth.max_priority_fee
+            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or await self.web3.eth.max_priority_fee
 
         # Ensure maxPriorityFeePerGas is not greater than maxFeePerGas
         if tx['maxPriorityFeePerGas'] > tx['maxFeePerGas']:
             tx['maxPriorityFeePerGas'] = tx['maxFeePerGas']
         
         if tx_options.gas_limit is None:
-            estimated_gas = self.web3.eth.estimate_gas(tx)
+            estimated_gas = await self.web3.eth.estimate_gas(tx)
             tx['gas'] = estimated_gas
         else:
             tx['gas'] = tx_options.gas_limit
@@ -155,7 +160,7 @@ class Orderbook:
         if tx_options.nonce is not None:
             tx['nonce'] = tx_options.nonce
         else:
-            tx['nonce'] = self.web3.eth.get_transaction_count(tx['from'])
+            tx['nonce'] = await self.web3.eth.get_transaction_count(tx['from'])
         return tx
 
     async def _execute_transaction(self, tx: Dict) -> Tuple[str, Optional[int]]:
@@ -163,9 +168,9 @@ class Orderbook:
         try:
             if self.private_key:
                 signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
-                tx_hash = self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                tx_hash = await self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
             else:
-                tx_hash = self.web3.eth.send_transaction(tx)
+                tx_hash = await self.web3.eth.send_transaction(tx)
             
             return tx_hash.hex()
         except Exception as e:
