@@ -106,7 +106,7 @@ class Orderbook:
     ) -> Dict:
         """Helper method to prepare transaction parameters"""
         func = getattr(self.contract.functions, function_name)(*args)
-
+        print(f"func: {func}")
         tx = {
             'to': self.contract_address,
             'value': value,
@@ -196,7 +196,7 @@ class Orderbook:
 
         return await self._prepare_transaction(
             "addBuyOrder",
-            [price_normalized, size_normalized, post_only],
+            [int(price_normalized), int(size_normalized), post_only],
             tx_options
         )
 
@@ -226,7 +226,7 @@ class Orderbook:
         price_normalized, size_normalized = self.normalize_with_precision_and_tick(price, size, tick_normalization)
         return await self._prepare_transaction(
             "addSellOrder",
-            [price_normalized, size_normalized, post_only],
+            [int(price_normalized), int(size_normalized), post_only],
             tx_options
         )
 
