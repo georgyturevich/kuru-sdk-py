@@ -1,4 +1,6 @@
 import datetime
+
+import web3.types
 from typing import Optional, List, Literal
 from dataclasses import dataclass
 
@@ -101,6 +103,15 @@ class OrderRequest:
     cancel_order_ids: Optional[List[int | str]] = None # For batch cancel
     cancel_cloids: Optional[List[str]] = None # For batch cancel
     tick_normalization: Optional[Literal["round_up", "round_down"]] = "round_down" # rounds up or down to the nearest tick size
+    status: Optional[Literal["pending", "failed", "fulfilled"]] = "pending"
+    tx_receipt: Optional[web3.types.TxReceipt] = None
+
+@dataclass
+class OrderRequestWithStatus(OrderRequest):
+    remaining_size: Optional[str] = None
+    is_canceled: Optional[bool] = False
+    created_at: Optional[datetime.datetime] = None
+    last_updated_at: Optional[datetime.datetime] = None
 
 @dataclass
 class Order:

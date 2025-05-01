@@ -1,8 +1,8 @@
 from web3 import Web3
-
+import web3.types
 from kuru_sdk.orderbook import Orderbook, TxOptions
 from typing import Dict, List, Optional, Callable, Awaitable, Any, Union
-from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderPriceSize, OrderRequest, OrderResponse, TradeResponse
+from kuru_sdk.types import OrderCreatedEvent, OrderRequest, OrderResponse, TradeResponse, OrderRequestWithStatus
 from kuru_sdk.api import KuruAPI
 import asyncio
 import logging
@@ -34,7 +34,7 @@ class ClientOrderExecutor:
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
         self.order_id_to_cloid: Dict[int, str] = {}
-        self.cloid_to_order: Dict[str, OrderRequest] = {}
+        self.cloid_to_order: Dict[str, OrderRequestWithStatus] = {}
 
         # Transaction processing queue and background task
         self.tx_queue = deque()
@@ -68,10 +68,15 @@ class ClientOrderExecutor:
                     
                     if receipt.status == 1:
                         order_created_events = self.orderbook.decode_logs(receipt)
-                        self.match_orders_with_events(orders, order_created_events)
+                        self.match_orders_with_events(orders, order_created_events, receipt)
                         self._log_info(f"Transaction successful for batch orders, tx_hash: {receipt.transactionHash.hex()}")
                         self._log_info(f"Order IDs: {self.cloid_to_order_id}")
                     else:
+                        for order in orders:
+                            order.status = "failed"
+                            order.tx_receipt = receipt
+                            self.cloid_to_order[order.cloid] = OrderRequestWithStatus(**order.__dict__)
+
                         self._log_error(f"Batch order failed: Transaction status {receipt.status}, tx_hash: {receipt.transactionHash.hex()}")
                     
                     # Execute callback if one exists
@@ -164,7 +169,7 @@ class ClientOrderExecutor:
             elif order.order_type == "cancel":
                 cancel_cloid = await self.cancel_orders(
                     market_address=market_address,
-                    cloids=[cloid],
+                    cloids=order.cancel_cloids,
                     tx_options=tx_options,
                     callback=callback, 
                     callback_args=callback_args,
@@ -174,7 +179,7 @@ class ClientOrderExecutor:
 
             # If we used a placeholder cloid, update it now with tx_hash_side_price format
             if order.cloid == "pending_cloid_":
-                price_str = str(order.price) if order.price else "market"
+                price_str = str(order.price) if order.price else order.order_type
                 order.cloid = f"{tx_hash}_{order.side}_{price_str}"
 
             # Store the callback if provided
@@ -206,23 +211,22 @@ class ClientOrderExecutor:
         """
         if not (cloids or order_ids):
             raise ValueError("Either cloids or order_ids must be provided for cancel orders")
-            
+
         # Ensure the tx processor is running
         await self.start_tx_processor()
-        
-        # Create cancel orders for processing
+
         cancel_orders = []
         if cloids:
             order_ids = []
             for cloid in cloids:
-                if cloid in self.cloid_to_order_id:
-                    order_ids.append(self.cloid_to_order_id[cloid])
-                    # Create a cancel order for tracking
+                order_id = self._get_order_id_for_cloid(cloid)
+                if order_id is not None:
+                    order_ids.append(order_id)
                     cancel_order = OrderRequest(
                         market_address=market_address,
                         cloid=cloid,
                         order_type="cancel",
-                        cancel_order_ids=[self.cloid_to_order_id[cloid]]
+                        cancel_order_ids=[order_id]
                     )
                     cancel_orders.append(cancel_order)
                 else:
@@ -279,14 +283,7 @@ class ClientOrderExecutor:
                         else:
                             raise ValueError(f"Order ID not found for cloid: {cloid}")
                 continue
-            
-            # Generate cloid if not provided (only for non-cancel orders)
-            if not order.cloid:
-                order.cloid = f"pending_cloid_{i}"
-            
-            # Store the order (only for non-cancel orders)
-            self.cloid_to_order[order.cloid] = order
-            
+
             if order.side == "buy":
                 buy_prices.append(order.price)
                 buy_sizes.append(order.size)
@@ -309,46 +306,67 @@ class ClientOrderExecutor:
 
         # Update cloids for orders with pending cloids
         cloids = []
-        
+
         for i, order in enumerate(orders):
-            # Skip cancel orders when collecting cloids
-            if order.order_type == "cancel":
-                continue
-            
-            if order.cloid.startswith("pending_cloid_"):
-                price_str = str(order.price) if order.price else "market"
+            # set cloid default SDK cloid if not present
+            if not order.cloid:
+                price_str = str(order.price) if order.price else order.order_type
                 new_cloid = f"{tx_hash}_{order.side}_{price_str}"
-                
-                # Update all references to the old cloid
-                self.cloid_to_order[new_cloid] = self.cloid_to_order.pop(order.cloid)
+
                 order.cloid = new_cloid
-            
+
             cloids.append(order.cloid)
 
         # Store the callback if provided
         if callback:
             self.tx_callbacks[tx_hash] = (callback, callback_args)
-        
+
         # Add to processing queue - include all orders for processing
         self.tx_queue.append((tx_hash, orders))
-        
+
         return cloids
 
-    def match_orders_with_events(self, orders: List[OrderRequest], events: List[OrderCreatedEvent]) -> List[OrderRequest]:
+    def _set_cloid_order_id_mapping(self, cloid: str, order_id: int) -> None:
+        """Safely set the mapping between cloid and order_id"""
+        self.cloid_to_order_id[cloid] = order_id
+        self.order_id_to_cloid[order_id] = cloid
+
+    def _set_order_status(self, order: OrderRequest, status: str, receipt: Optional[web3.types.TxReceipt] = None) -> None:
+        """Safely update order status and store in cloid_to_order"""
+        order.status = status
+        if receipt is not None:
+            order.tx_receipt = receipt
+        self.cloid_to_order[order.cloid] = OrderRequestWithStatus(**order.__dict__)
+
+    def _get_order_id_for_cloid(self, cloid: str) -> Optional[int]:
+        """Safely get order_id for a given cloid"""
+        return self.cloid_to_order_id.get(cloid)
+
+    def match_orders_with_events(self, orders: List[OrderRequest], events: List[OrderCreatedEvent], receipt: web3.types.TxReceipt) -> List[OrderRequest]:
         """
         Match orders with events based the price and isBuy field
         """
-
         for order in orders:
             if order.order_type == "cancel" or order.order_type == "market":
+                self._set_order_status(order, "fulfilled", receipt)
+                
+                if order.order_type == "cancel":
+                    if order.cancel_cloids:
+                        for cloid in order.cancel_cloids:
+                            if cloid in self.cloid_to_order:
+                                self.cloid_to_order[cloid].is_canceled = True
+                    if order.cancel_order_ids:
+                        for order_id in order.cancel_order_ids:
+                            cloid = self.get_cloid_by_order_id(order_id)
+                            if cloid and cloid in self.cloid_to_order:
+                                self.cloid_to_order[cloid].is_canceled = True
                 continue
+
             for event in events:
-                # Convert order.price to a number before comparison
                 order_price = float(order.price) if order.price else 0
                 if order_price * self.orderbook.market_params.price_precision == event.price and order.side == ("buy" if event.is_buy else "sell"):
-                    self.cloid_to_order_id[order.cloid] = event.order_id
-                    self.order_id_to_cloid[event.order_id] = order.cloid
-                    self.cloid_to_order[order.cloid] = order
+                    self._set_order_status(order, "fulfilled", receipt)
+                    self._set_cloid_order_id_mapping(order.cloid, event.order_id)
     
     
     async def get_l2_book(self):
@@ -381,6 +399,18 @@ class ClientOrderExecutor:
     async def get_user_orders(self) -> OrderResponse:
         return self.kuru_api.get_user_orders(self.wallet_address)
 
+    def get_all_orders(self) -> List[OrderRequest]:
+        """Get all order requests regardless of status"""
+        return list(self.cloid_to_order.values())
+
+    def get_pending_orders(self) -> List[OrderRequest]:
+        """Get all pending order requests"""
+        return [order for order in self.cloid_to_order.values() if order.status == "pending"]
+
+    def get_failed_orders(self) -> List[OrderRequest]:
+        """Get all failed order requests"""
+        return [order for order in self.cloid_to_order.values() if order.status == "failed"]
+
     def _log_info(self, message):
         """Log info message if logger is enabled"""
         if self.logger:
@@ -390,3 +420,31 @@ class ClientOrderExecutor:
         """Log error message if logger is enabled"""
         if self.logger:
             self.logger.error(message)
+
+    def set_remaining_size(self, cloid: str, remaining_size: str) -> None:
+        """
+        Set the remaining size for an order identified by its cloid
+        Args:
+            cloid: The client order ID
+            remaining_size: The remaining size to set
+        """
+        if cloid in self.cloid_to_order:
+            self.cloid_to_order[cloid].remaining_size = remaining_size
+            self._log_info(f"Updated remaining size for order {cloid} to {remaining_size}")
+        else:
+            self._log_error(f"Order not found for cloid: {cloid}")
+            raise KeyError(f"Order not found for cloid: {cloid}")
+
+    def set_remaining_size_by_order_id(self, order_id: int, remaining_size: str) -> None:
+        """
+        Set the remaining size for an order identified by its order_id
+        Args:
+            order_id: The order ID
+            remaining_size: The remaining size to set
+        """
+        cloid = self.get_cloid_by_order_id(order_id)
+        if cloid:
+            self.set_remaining_size(cloid, remaining_size)
+        else:
+            self._log_error(f"Order not found for order_id: {order_id}")
+            raise KeyError(f"Order not found for order_id: {order_id}")

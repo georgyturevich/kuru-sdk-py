@@ -89,12 +89,13 @@ async def main():
                 side='sell',
                 price='8',
                 size='1',
+                post_only=True
             )
         ]
 
         # Get the current nonce for the account
         current_nonce = client.web3.eth.get_transaction_count(account_address)
-        
+
         tx_options = TxOptions(
             gas_limit=200_000,
             gas_price=50 * 10**9,
@@ -122,21 +123,22 @@ async def main():
         cancel_orders = OrderRequest(
             market_address=ADDRESSES['orderbook'],
             order_type='cancel',
-            cloid=cloid
+            cancel_cloids=[cloid]
         )
         tx_options.nonce += 1
 
         start_time = time.time()
-        tx_hash = await client.place_order(cancel_orders, tx_options, async_execution=True)
+        cancel_cloids = await client.batch_orders([cancel_orders], tx_options, async_execution=True)
         end_time = time.time()
         execution_time = end_time - start_time
 
-        print(f"Order transaction hash: {tx_hash}")
+        print(f"Cancel Cloid: {cancel_cloids[0]}")
         print(f"Order cancellation took {execution_time:.4f} seconds")
 
         await asyncio.sleep(10)
         print(f"Exchange OrderId: {client.get_order_id_by_cloid(cloid)}")
-        print(f"Order: {client.get_order_by_cloid(cloid)}")
+        print(f"Order: {client.get_order_by_cloid(cancel_cloids[0])}")
+        print(f"Limit Order: {client.get_order_by_cloid(cloid)}")
         await shutdown_event
 
     except asyncio.CancelledError:
