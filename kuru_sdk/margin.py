@@ -6,6 +6,10 @@ import json
 import os
 
 from web3.contract import AsyncContract
+from kuru_sdk.logging_config import get_logger
+
+# Get logger for this module
+logger = get_logger(__name__)
 
 # Load ERC20 ABI
 with open(os.path.join(os.path.dirname(__file__), 'abi/ierc20.json'), 'r') as f:
@@ -94,9 +98,9 @@ class MarginAccount:
             ).call()
                 
             if allowance < amount:
-                print(f"Insufficient allowance. Current: {allowance}, Required: {amount}")
-                print("Approving tokens for deposit...")
-                
+                logger.info(f"Insufficient allowance. Current: {allowance}, Required: {amount}")
+                logger.info("Approving tokens for deposit...")
+
                 # Get nonce asynchronously
                 nonce = await self.web3.eth.get_transaction_count(self.wallet_address)
                 
@@ -114,9 +118,9 @@ class MarginAccount:
                 # Send transaction and wait for receipt
                 tx_hash = await self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
                 receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
-                
-                print(f"Approval transaction hash: {receipt.transactionHash.hex()}")
-        
+
+                logger.info(f"Approval transaction hash: {receipt.transactionHash.hex()}")
+
         # Build deposit transaction
         transaction = self.contract.functions.deposit(
             self.wallet_address,
@@ -146,7 +150,7 @@ class MarginAccount:
             raw_transaction = await transaction.build_transaction(transaction_dict)
             signed_txn = self.account.sign_transaction(raw_transaction)
             tx_hash = await self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
-            print(f"Deposit transaction submitted: {tx_hash.hex()}")
+            logger.info(f"Deposit transaction submitted: {tx_hash.hex()}")
         else:
             raise Exception("Private key is required to deposit tokens into the margin account")
             

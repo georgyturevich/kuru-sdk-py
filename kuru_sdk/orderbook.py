@@ -7,8 +7,12 @@ import os
 import asyncio
 
 from kuru_sdk.utils import get_error_message
+from kuru_sdk.logging_config import get_logger
 
 from .types import MarketParams, OrderCreatedEvent, TxOptions, L2Book, FormattedL2Book, OrderPriceSize, VaultParams
+
+# Get logger for this module
+logger = get_logger(__name__)
 
 
 class Orderbook:
@@ -581,11 +585,11 @@ class Orderbook:
                 order_id = decoded_logs[0]['args']['orderId']
                 return order_id
             else:
-                print("No OrderCreated event found in the transaction receipt.")
+                logger.warning("No OrderCreated event found in the transaction receipt.")
                 return None
         except Exception as e:
             # Handle potential errors during decoding (e.g., event not found in ABI)
-            print(f"Error decoding logs from receipt: {e}")
+            logger.error(f"Error decoding logs from receipt: {e}")
             return None
 
 
@@ -595,7 +599,7 @@ class Orderbook:
         for log in tx_logs:
             try:
                 order_created_event = self.contract.events.OrderCreated().process_log(log)
-                print(f"Order created event: {order_created_event}")
+                logger.debug(f"Order created event: {order_created_event}")
                 if order_created_event:
                     order_created_event = OrderCreatedEvent(
                         order_id=order_created_event['args']['orderId'],
@@ -605,7 +609,7 @@ class Orderbook:
                     )
                 order_created_events.append(order_created_event)
             except Exception as e:
-                print(f"Error decoding logs for order created event: {e}")
+                logger.error(f"Error decoding logs for order created event: {e}")
                 continue
 
         return order_created_events
@@ -755,7 +759,7 @@ class Orderbook:
         elif event == "Trade":
             orderbook = self._reconcile_orderbook_for_trade(orderbook, payload)
 
-        print(f"Reconciled orderbook: {orderbook.vault_params}")
+        logger.debug(f"Reconciled orderbook: {orderbook.vault_params}")
         return orderbook
     
 
@@ -772,8 +776,8 @@ class Orderbook:
 
         if is_buy:
             price = floor((int(payload['price']) / self.market_params.price_precision) * 10**total_decimals) / 10**total_decimals 
-            print(f"Price: {price}")
-            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+            logger.debug(f"Price: {price}")
+            logger.debug("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
             # find the corresponding price in the buy_orders list
             for order in buy_orders:
                 if order.price == price:
@@ -851,24 +855,24 @@ class Orderbook:
             vault_params=orderbook.vault_params
         )
 
-        print(f"New orderbook: {new_orderbook.vault_params}")
+        logger.debug(f"New orderbook: {new_orderbook.vault_params}")
 
         total_decimals = log10(self.market_params.price_precision / self.market_params.tick_size)
 
         order_id = payload['orderId']
-            
-        print(f"Order ID: {order_id}")
+
+        logger.debug(f"Order ID: {order_id}")
 
         if order_id == 0:
             # amm trade
-            print(f"Handling AMM trade")
+            logger.debug("Handling AMM trade")
             new_orderbook = self._handle_amm_trade(new_orderbook, payload)
         else:
             # regular trade
-            print(f"Handling regular trade")
+            logger.debug("Handling regular trade")
             new_orderbook = self._handle_regular_trade(new_orderbook, payload)
 
-        print(f"New orderbook: {new_orderbook.vault_params}")
+        logger.debug(f"New orderbook: {new_orderbook.vault_params}")
 
         return new_orderbook
 
@@ -902,11 +906,11 @@ class Orderbook:
                 
             else:
                 orderbook.vault_params.bid_partially_filled_size = orderbook.vault_params.vault_bid_order_size - updated_size
-            
-        print(f"Acquired vault params: {orderbook.vault_params}")
+
+        logger.debug(f"Acquired vault params: {orderbook.vault_params}")
         amm_prices = self._get_amm_prices_for_vault(orderbook.vault_params)
-        
-        print(f"Acquired AMM prices")
+
+        logger.debug("Acquired AMM prices")
         orderbook.amm_buy_orders = amm_prices[0]
         orderbook.amm_sell_orders = amm_prices[1]
 

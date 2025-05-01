@@ -3,6 +3,10 @@ import asyncio
 import aiohttp
 from typing import Optional, Callable
 from kuru_sdk.types import OrderCreatedPayload, TradePayload, OrderCancelledPayload, MarketParams
+from kuru_sdk.logging_config import get_logger
+
+# Get logger for this module
+logger = get_logger(__name__)
 
 class WebSocketHandler:
     def __init__(self,
@@ -39,59 +43,59 @@ class WebSocketHandler:
         # Register event handlers
         @self.sio.event
         async def connect():
-            print(f"Connected to WebSocket server at {websocket_url}")
-        
+            logger.info(f"Connected to WebSocket server at {websocket_url}")
+
         @self.sio.event
         async def disconnect():
-            print("Disconnected from WebSocket server")
-        
+            logger.info("Disconnected from WebSocket server")
+
         @self.sio.event
         async def OrderCreated(payload):
             formatted_payload = self._format_order_created_payload(payload)
-            print(f"OrderCreated Event Received: {formatted_payload}")
+            logger.info(f"OrderCreated Event Received: {formatted_payload}")
             try:
                 if self._on_order_created:
                     await self._on_order_created(formatted_payload)
             except Exception as e:
-                print(f"Error in on_order_created callback: {e}")
-        
+                logger.error(f"Error in on_order_created callback: {e}")
+
         @self.sio.event
         async def Trade(payload):
             formatted_payload = self._format_trade_payload(payload)
-            print(f"Trade Event Received: {formatted_payload}")
+            logger.info(f"Trade Event Received: {formatted_payload}")
             try:
                 if self._on_trade:
                     await self._on_trade(formatted_payload)
             except Exception as e:
-                print(f"Error in on_trade callback: {e}")
-        
+                logger.error(f"Error in on_trade callback: {e}")
+
         @self.sio.event
         async def OrdersCanceled(payload):
             formatted_payload = self._format_order_cancelled_payload(payload)
-            print(f"OrdersCanceled Event Received: {formatted_payload}")
+            logger.info(f"OrdersCanceled Event Received: {formatted_payload}")
             try:
                 if self._on_order_cancelled:
                     await self._on_order_cancelled(formatted_payload)
             except Exception as e:
-                print(f"Error in on_order_cancelled callback: {e}")
+                logger.error(f"Error in on_order_cancelled callback: {e}")
 
     async def connect(self):
         """Connect to the WebSocket server"""
         try:
             if not self._session:
                 self._session = aiohttp.ClientSession()
-            
-            print(self.websocket_url)
+
+            logger.debug(self.websocket_url)
             await self.sio.connect(
                 f"{self.websocket_url}?marketAddress={self.market_address}",
                 transports=['websocket']
             )
-            print(f"Successfully connected to {self.websocket_url}")
-            
+            logger.info(f"Successfully connected to {self.websocket_url}")
+
             # Keep the connection alive in the background
             asyncio.create_task(self.sio.wait())
         except Exception as e:
-            print(f"Failed to connect to WebSocket server: {e}")
+            logger.error(f"Failed to connect to WebSocket server: {e}")
             raise
 
     async def disconnect(self):
@@ -101,9 +105,9 @@ class WebSocketHandler:
             if self._session:
                 await self._session.close()
                 self._session = None
-            print("Disconnected from WebSocket server")
+            logger.info("Disconnected from WebSocket server")
         except Exception as e:
-            print(f"Error during disconnect: {e}")
+            logger.error(f"Error during disconnect: {e}")
             raise
 
     def is_connected(self) -> bool:

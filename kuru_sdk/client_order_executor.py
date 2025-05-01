@@ -6,6 +6,10 @@ import asyncio
 from kuru_sdk.orderbook import Orderbook, TxOptions
 from kuru_sdk.types import L2Book, Order, OrderCreatedEvent, OrderPriceSize, OrderRequest
 from kuru_sdk.api import KuruAPI
+from kuru_sdk.logging_config import get_logger
+
+# Get logger for this module
+logger = get_logger(__name__)
 
 class ClientOrderExecutor:
     def __init__(self,
@@ -45,13 +49,13 @@ class ClientOrderExecutor:
     #         asyncio.create_task(self.websocket_handler.connect())
     #         await asyncio.sleep(2)
     #     else:
-    #         print("No websocket handler provided")
+    #         logger.info("No websocket handler provided")
 
     # async def disconnect(self):
     #     if self.websocket_handler:
     #         await self.websocket_handler.disconnect()
     #     else:
-    #         print("No websocket handler provided")
+    #         logger.info("No websocket handler provided")
 
     async def place_order(self, order: OrderRequest, tx_options: Optional[TxOptions] = TxOptions()) -> str:
         """
@@ -71,7 +75,7 @@ class ClientOrderExecutor:
                     raise ValueError("Size is required for limit orders")
                 
                 if order.side == "buy":
-                    print(f"Adding buy order with price: {order.price}, size: {order.size}, post_only: {order.post_only}, tx_options: {tx_options}")
+                    logger.info(f"Adding buy order with price: {order.price}, size: {order.size}, post_only: {order.post_only}, tx_options: {tx_options}")
                     tx_hash = await self.orderbook.add_buy_order(
                         price=order.price,
                         size=order.size,
@@ -119,17 +123,17 @@ class ClientOrderExecutor:
             if receipt.status == 1:
                 if cloid:
                     order_id = self.orderbook.get_order_id_from_receipt(receipt)
-                    print(f"Order ID: {order_id}")
+                    logger.info(f"Order ID: {order_id}")
                     if order_id:
                         self.cloid_to_order_id[cloid] = order_id
                         self.order_id_to_cloid[order_id] = cloid
-                    print(f"Transaction successful for cloid {cloid}, tx_hash: {receipt.transactionHash.hex()}")
+                    logger.info(f"Transaction successful for cloid {cloid}, tx_hash: {receipt.transactionHash.hex()}")
                 return receipt.transactionHash.hex() # Return the full receipt object
             else:
                 raise Exception(f"Order failed: Transaction status {receipt.status}, receipt: {receipt}")
 
         except Exception as e:
-            print(f"Error placing order: {e}")
+            logger.error(f"Error placing order: {e}")
             raise
         
     async def cancel_orders(self, cloids: Optional[List[str]] = None, order_ids: Optional[List[int]] = None, tx_options: Optional[TxOptions] = TxOptions()) -> str:
@@ -209,8 +213,8 @@ class ClientOrderExecutor:
         if receipt.status == 1:
             order_created_events = self.orderbook.decode_logs(receipt)
             self.match_orders_with_events(orders, order_created_events)
-            print(f"Transaction successful for batch orders, tx_hash: {receipt.transactionHash.hex()}")
-            print(f"Order IDs: {self.cloid_to_order_id}")
+            logger.info(f"Transaction successful for batch orders, tx_hash: {receipt.transactionHash.hex()}")
+            logger.info(f"Order IDs: {self.cloid_to_order_id}")
             return receipt.transactionHash.hex()
         else:
             raise Exception(f"Batch order failed: Transaction status {receipt.status}, receipt: {receipt}")
