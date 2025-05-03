@@ -265,6 +265,8 @@ class ClientOrderExecutor:
         sell_sizes = []
         order_ids_to_cancel = []
         post_only = False
+        buy_tick_normalization = []
+        sell_tick_normalization = []
         
         # Ensure the tx processor is running
         await self.start_tx_processor()
@@ -287,9 +289,11 @@ class ClientOrderExecutor:
             if order.side == "buy":
                 buy_prices.append(order.price)
                 buy_sizes.append(order.size)
+                buy_tick_normalization.append(order.tick_normalization)
             elif order.side == "sell":
                 sell_prices.append(order.price)
                 sell_sizes.append(order.size)
+                sell_tick_normalization.append(order.tick_normalization)
 
             post_only = post_only or (order.post_only if order.post_only is not None else False)
 
@@ -300,6 +304,8 @@ class ClientOrderExecutor:
             sell_sizes=sell_sizes,
             order_ids_to_cancel=order_ids_to_cancel,
             post_only=post_only,
+            buy_tick_normalization=buy_tick_normalization,
+            sell_tick_normalization=sell_tick_normalization,
             tx_options=tx_options,
             async_execution=async_execution
         )
@@ -363,8 +369,9 @@ class ClientOrderExecutor:
                 continue
 
             for event in events:
-                order_price = float(order.price) if order.price else 0
-                if order_price * self.orderbook.market_params.price_precision == event.price and order.side == ("buy" if event.is_buy else "sell"):
+                normalized_order_price, _ = self.orderbook.normalize_with_precision_and_tick(
+                    order.price, '0', order.tick_normalization)
+                if normalized_order_price == event.price and order.side == ("buy" if event.is_buy else "sell"):
                     self._set_order_status(order, "fulfilled", receipt)
                     self._set_cloid_order_id_mapping(order.cloid, event.order_id)
     
@@ -372,7 +379,7 @@ class ClientOrderExecutor:
     async def get_l2_book(self):
         return await self.orderbook.get_l2_book()
     
-    def get_order_by_cloid(self, cloid: str) -> OrderRequest:
+    def get_order_by_cloid(self, cloid: str) -> OrderRequestWithStatus:
         self._log_info(self.cloid_to_order_id)
         return self.cloid_to_order.get(cloid)
     

@@ -358,7 +358,8 @@ class Orderbook:
         sell_sizes: List[str],
         order_ids_to_cancel: List[str],
         post_only: bool,
-        tick_normalization: Optional[str] = None,
+        buy_tick_normalization: Optional[List[str]] = [],
+        sell_tick_normalization: Optional[List[str]] = [],
         tx_options: TxOptions = TxOptions()
     ) -> Dict:
         normalized_buy_prices = []
@@ -366,12 +367,12 @@ class Orderbook:
         normalized_sell_prices = []
         normalized_sell_sizes = []
         
-        for price, size in zip(buy_prices, buy_sizes):
+        for price, size, tick_normalization in zip(buy_prices, buy_sizes, buy_tick_normalization):
             price_norm, size_norm = self.normalize_with_precision_and_tick(price, size, tick_normalization)
             normalized_buy_prices.append(price_norm)
             normalized_buy_sizes.append(size_norm)
             
-        for price, size in zip(sell_prices, sell_sizes):
+        for price, size, tick_normalization in zip(sell_prices, sell_sizes, sell_tick_normalization):
             price_norm, size_norm = self.normalize_with_precision_and_tick(price, size, tick_normalization)
             normalized_sell_prices.append(price_norm)
             normalized_sell_sizes.append(size_norm)
@@ -400,12 +401,14 @@ class Orderbook:
         order_ids_to_cancel: Optional[List[str]] = [],
         post_only: Optional[bool] = False,
         tx_options: TxOptions = TxOptions(),
+        buy_tick_normalization: Optional[List[str]] = [],
+        sell_tick_normalization: Optional[List[str]] = [],
         async_execution: bool = False
     ) -> str:
         try:
             tx = await self.prepare_batch_orders(
                 buy_prices, buy_sizes, sell_prices, sell_sizes,
-                order_ids_to_cancel, post_only, None, tx_options
+                order_ids_to_cancel, post_only, buy_tick_normalization, sell_tick_normalization, tx_options
             )
             tx_hash = await self._execute_transaction(tx, async_execution)
             return tx_hash
