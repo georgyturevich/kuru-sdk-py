@@ -1,5 +1,6 @@
-
 import datetime
+
+import web3.types
 from typing import Optional, List, Literal
 from dataclasses import dataclass
 
@@ -43,36 +44,38 @@ class OrderPriceSize:
 @dataclass
 class OrderCreatedEvent:
     order_id: int
-    price: int
-    size: int
+    price: str
+    size: str
     is_buy: bool
 
 @dataclass
 class OrderCreatedPayload:
     order_id: int
+    cloid: str
     market_address: str
     owner: str
-    price: float
-    size: float
+    price: str
+    size: str
     is_buy: bool
     block_number: int
     tx_index: int
     log_index: int
     transaction_hash: str
     trigger_time: str
-    remaining_size: float
+    remaining_size: str
     is_canceled: bool
     
 @dataclass
 class TradePayload:
     order_id: int
+    cloid: str
     market_address: str
     maker_address: str
     is_buy: bool
-    price: float
-    updated_size: float
+    price: str
+    updated_size: str
     taker_address: str
-    filled_size: float
+    filled_size: str
     block_number: int
     tx_index: int
     log_index: int
@@ -82,6 +85,7 @@ class TradePayload:
 @dataclass
 class OrderCancelledPayload:
     order_ids: List[int]
+    cloids: List[str]
     maker_address: str
     canceled_orders_data: List[OrderCreatedPayload]
 @dataclass
@@ -99,6 +103,15 @@ class OrderRequest:
     cancel_order_ids: Optional[List[int | str]] = None # For batch cancel
     cancel_cloids: Optional[List[str]] = None # For batch cancel
     tick_normalization: Optional[Literal["round_up", "round_down"]] = "round_down" # rounds up or down to the nearest tick size
+    status: Optional[Literal["pending", "failed", "fulfilled"]] = "pending"
+    tx_receipt: Optional[web3.types.TxReceipt] = None
+
+@dataclass
+class OrderRequestWithStatus(OrderRequest):
+    remaining_size: Optional[str] = None
+    is_canceled: Optional[bool] = False
+    created_at: Optional[datetime.datetime] = None
+    last_updated_at: Optional[datetime.datetime] = None
 
 @dataclass
 class Order:
@@ -213,3 +226,49 @@ class FormattedL2Book:
 
         # Combine all parts
         return f"Block: {self.block_num}\n{header}\n{separator}\n" + "\n".join(rows)
+
+@dataclass
+class Pagination:
+    total: int
+    page: int
+    pageSize: int
+
+@dataclass
+class OrderResponseData:
+    data: List[Order]
+    pagination: Pagination
+
+@dataclass
+class OrderResponse:
+    success: bool
+    code: int
+    timestamp: int
+    data: OrderResponseData
+
+@dataclass
+class Trade:
+    orderid: int
+    makeraddress: str
+    takeraddress: str
+    isbuy: bool
+    price: str
+    filledsize: str
+    blocknumber: str
+    txindex: str
+    logindex: str
+    transactionhash: str
+    triggertime: datetime
+    monadPrice: float
+
+@dataclass
+class TradeResponseData:
+    data: List[Trade]
+    pagination: Pagination
+    
+@dataclass
+class TradeResponse:
+    success: bool
+    code: int
+    timestamp: int
+    data: TradeResponseData
+
