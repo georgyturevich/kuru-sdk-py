@@ -4,9 +4,9 @@ from datetime import datetime
 from kuru_sdk.types import Order, OrderResponse, TradeResponse, Trade
 
 class KuruAPI:
-  def __init__(self, url: str):
-    self.url = url
-    self.session = None
+    def __init__(self, url: str):
+        self.url = url
+        self.session = None
 
     async def _ensure_session(self):
       """Ensure an aiohttp session exists or create one"""
