@@ -20,7 +20,7 @@ pip install kuru-sdk
 
 ## Getting Started
 
-This SDK provides tools to interact with the Kuru order book and margin accounts primarily through Web3 and WebSocket connections for real-time order execution. It also offers a basic REST API client for querying data.
+This SDK provides tools to interact with the Kuru order book and margin accounts primarily through AsyncWeb3 and WebSocket connections for real-time order execution. It also offers an asynchronous REST API client for querying data.
 
 ### Prerequisites
 
@@ -46,7 +46,7 @@ Here's a simplified example of connecting to the WebSocket and placing a batch o
 ```python
 import asyncio
 import os
-from web3 import Web3
+from web3 import AsyncWeb3, AsyncHTTPProvider
 from dotenv import load_dotenv
 from kuru_sdk import ClientOrderExecutor
 from kuru_sdk.types import OrderRequest
@@ -61,10 +61,10 @@ ORDERBOOK_ADDRESS = '0x05e6f736b5dedd60693fa806ce353156a1b73cf3' # Example addre
 
 async def run():
     client = ClientOrderExecutor(
-        web3=Web3(Web3.HTTPProvider(NETWORK_RPC)),
+        web3=AsyncWeb3(AsyncHTTPProvider(NETWORK_RPC)),
         contract_address=ORDERBOOK_ADDRESS,
         private_key=PRIVATE_KEY,
-        websocket_url=WEBSOCKET_URL
+        kuru_api_url="https://api.testnet.kuru.io"
     )
 
     try:
@@ -131,9 +131,9 @@ if __name__ == "__main__":
 
 ## Key Features
 
-*   **`ClientOrderExecutor`**: Manages Orders with client orders for real-time order placement, cancellation, and updates. Uses Web3 for signing and sending transactions.
-*   **`Orderbook`**: Interacts directly with the Orderbook contract via Web3 calls (primarily for read operations or direct transactions if not using the WebSocket client).
-*   **`MarginAccount`**: Interacts with the MarginAccount contract via Web3 calls.
+*   **`ClientOrderExecutor`**: Manages Orders with client orders for real-time order placement, cancellation, and updates. Uses AsyncWeb3 for signing and sending transactions.
+*   **`Orderbook`**: Interacts directly with the Orderbook contract via AsyncWeb3 calls (primarily for read operations or direct transactions).
+*   **`MarginAccount`**: Interacts with the MarginAccount contract via AsyncWeb3 calls.
 *   **`KuruAPI`**: A simple client for querying REST API endpoints (e.g., fetching user orders, trades).
 *   **`types`**: Defines data structures like `OrderRequest` for standardized interactions.
 *   **`websocket_handler`**: Core WebSocket communication logic used by `ClientOrderExecutor`.

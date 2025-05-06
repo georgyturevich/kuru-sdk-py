@@ -1,5 +1,6 @@
 from math import ceil, floor, log10
-from web3 import Web3
+from web3 import AsyncWeb3
+from web3 import AsyncHTTPProvider
 from typing import Optional, List, Tuple, Dict, Any
 import json
 import os
@@ -14,7 +15,7 @@ from .types import MarketParams, OrderCreatedEvent, TxOptions, L2Book, Formatted
 class Orderbook:
     def __init__(
         self,
-        web3: Web3,
+        web3: AsyncWeb3,
         contract_address: str,
         private_key: Optional[str] = None,
         logger: Optional[logging.Logger] = None
@@ -25,13 +26,22 @@ class Orderbook:
         
         Initialize the Orderbook SDK
         Args:
-            web3: Web3 instance
+            web3: AsyncWeb3 instance
             contract_address: Address of the deployed Orderbook contract
             private_key: Private key for signing transactions (optional)
             logger: Logger instance (optional)
         """
-        self.web3 = web3
-        self.contract_address = Web3.to_checksum_address(contract_address)
+        # Ensure we have an AsyncWeb3 instance
+        if not isinstance(web3, AsyncWeb3):
+            if hasattr(web3, 'provider') and hasattr(web3.provider, 'endpoint_uri'):
+                endpoint = web3.provider.endpoint_uri
+                self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+            else:
+                raise ValueError("Cannot determine provider endpoint for Web3 instance")
+        else:
+            self.web3 = web3
+
+        self.contract_address = AsyncWeb3.to_checksum_address(contract_address)
         self.private_key = private_key
         
         # Set up logger
@@ -39,28 +49,66 @@ class Orderbook:
             self.logger = logger
         else:
             self.logger = logging.getLogger(__name__)
-        
+
         # Load ABI from JSON file
         with open(os.path.join(os.path.dirname(__file__), 'abi/orderbook.json'), 'r') as f:
             contract_abi = json.load(f)
         
+        # Create contract interfaces
         self.contract = self.web3.eth.contract(
             address=self.contract_address,
             abi=contract_abi
         )
         
-        self.market_params = self._fetch_market_params()
+        # Store account for transaction signing
+        if self.private_key:
+            self.account = web3.eth.account.from_key(self.private_key)
+
+        # Load market parameters synchronously at init time
+        self.market_params = None
+
+    def set_market_params(self, market_params: MarketParams):
+        self.market_params = market_params
 
     def _log_info(self, message):
         """Log info message"""
         self.logger.info(message)
-    
+
     def _log_error(self, message):
         """Log error message"""
         self.logger.error(message)
 
     def _fetch_market_params(self) -> MarketParams:
-        params = self.contract.functions.getMarketParams().call()
+        """
+        Fetch market parameters synchronously for initialization.
+        This is a special case for init-time data fetching only.
+        """
+        import asyncio
+        # Create a new event loop for this synchronous call
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            params = loop.run_until_complete(self.contract.functions.getMarketParams().call())
+            return MarketParams(
+                price_precision=params[0],
+                size_precision=params[1],
+                base_asset=params[2],
+                base_asset_decimals=params[3],
+                quote_asset=params[4],
+                quote_asset_decimals=params[5],
+                tick_size=params[6],
+                min_size=params[7],
+                max_size=params[8],
+                taker_fee_bps=params[9],
+                maker_fee_bps=params[10]
+            )
+        finally:
+            loop.close()
+
+    async def fetch_market_params(self) -> MarketParams:
+        """Async method to fetch market parameters"""
+        params = await self.contract.functions.getMarketParams().call()
         return MarketParams(
             price_precision=params[0],
             size_precision=params[1],
@@ -113,7 +161,7 @@ class Orderbook:
             'data': func._encode_transaction_data(),
             'from': self.web3.eth.account.from_key(self.private_key).address,
             'type': '0x2',  # EIP-1559 transaction type
-            'chainId': self.web3.eth.chain_id
+            'chainId': await self.web3.eth.chain_id
         }
 
         # Set maxPriorityFeePerGas (tip) and maxFeePerGas
@@ -123,8 +171,8 @@ class Orderbook:
         else:
             # Default to 2x current base fee for maxFeePerGas
             # Get base fee from latest block
-            base_fee = self.web3.eth.get_block('latest')['baseFeePerGas']
-            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or self.web3.eth.max_priority_fee
+            base_fee = (await self.web3.eth.get_block('latest'))['baseFeePerGas']
+            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or await self.web3.eth.max_priority_fee
             tx['maxFeePerGas'] = base_fee + tx['maxPriorityFeePerGas']
             # Default priority fee (can be adjusted based on network conditions)
 
@@ -133,7 +181,7 @@ class Orderbook:
             tx['maxPriorityFeePerGas'] = tx['maxFeePerGas']
         
         if tx_options.gas_limit is None:
-            estimated_gas = self.web3.eth.estimate_gas(tx)
+            estimated_gas = await self.web3.eth.estimate_gas(tx)
             tx['gas'] = estimated_gas
         else:
             tx['gas'] = tx_options.gas_limit
@@ -141,17 +189,17 @@ class Orderbook:
         if tx_options.nonce is not None:
             tx['nonce'] = tx_options.nonce
         else:
-            tx['nonce'] = self.web3.eth.get_transaction_count(tx['from'])
+            tx['nonce'] = await self.web3.eth.get_transaction_count(tx['from'])
         return tx
 
     async def _execute_transaction(self, tx: Dict, async_execution: bool = False) -> str:
         """
         Execute prepared transaction and return hash
-        
+
         Args:
             tx: The transaction to execute
             async_execution: If True, send transaction asynchronously without waiting for response
-        
+
         Returns:
             Transaction hash
         """
@@ -161,20 +209,20 @@ class Orderbook:
                 # Get the hash from the signed transaction
                 tx_hash_from_signed = signed_tx.hash.hex()
                 self._log_info(f"tx_hash_from_signed: {tx_hash_from_signed}")
-                
+
                 if async_execution:
                     async def send_tx_background():
                         try:
-                            self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                            await self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
                         except Exception as e:
                             self._log_error(f"Background transaction submission error: {e}")
-                    
+
                     # Create a task that runs in the background
                     asyncio.create_task(send_tx_background())
                 else:
                     # Send synchronously
-                    self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
-                
+                    await self.web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+
                 return tx_hash_from_signed
             else:
                 # For non-private key transactions
@@ -433,7 +481,7 @@ class Orderbook:
             )
         except Exception as e:
             raise Exception("Error fetching vault parameters: " + str(e))
-            
+
     
     async def fetch_orderbook(self) -> L2Book:
         """
@@ -442,8 +490,8 @@ class Orderbook:
         Returns:
             L2Book: Current state of the orderbook containing buy and sell orders
         """
-        # Get raw L2 book data from contract
-        l2_book_data = self.contract.functions.getL2Book().call()
+        # Get raw L2 book data from contract asynchronously
+        l2_book_data = await self.contract.functions.getL2Book().call()
         
         # Parse raw L2 data into price/size orders
         buy_orders = []
@@ -605,8 +653,8 @@ class Orderbook:
         bids = []
         asks = []
         
-        # Get vault parameters
-        vault_params = self.contract.functions.getVaultParams().call()
+        # Get vault parameters using async call
+        vault_params = await self.contract.functions.getVaultParams().call()
         
         vault_best_bid = vault_params[1]
         vault_best_ask = vault_params[3]
