@@ -179,7 +179,12 @@ class ClientOrderExecutor:
 
             # If we used a placeholder cloid, update it now with tx_hash_side_price format
             if order.cloid == "pending_cloid_":
-                price_str = str(order.price) if order.price else order.order_type
+                if order.price:
+                    normalized_order_price, _ = self.orderbook.normalize_with_precision_and_tick(
+                        order.price, '0', order.tick_normalization)
+                    price_str = str(normalized_order_price)
+                else:
+                    price_str = order.order_type
                 order.cloid = f"{tx_hash}_{order.side}_{price_str}"
 
             # Store the callback if provided
@@ -316,7 +321,12 @@ class ClientOrderExecutor:
         for i, order in enumerate(orders):
             # set cloid default SDK cloid if not present
             if not order.cloid:
-                price_str = str(order.price) if order.price else order.order_type
+                if order.price:
+                    normalized_order_price, _ = self.orderbook.normalize_with_precision_and_tick(
+                        order.price, '0', order.tick_normalization)
+                    price_str = str(normalized_order_price)
+                else:
+                    price_str = order.order_type
                 new_cloid = f"{tx_hash}_{order.side}_{price_str}"
 
                 order.cloid = new_cloid
@@ -401,10 +411,13 @@ class ClientOrderExecutor:
 
     async def get_orders_by_cloids(self, cloids: List[str]) -> OrderResponse:
         order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
-        return self.get_orders_by_ids(order_ids)
-    
+        return await self.get_orders_by_ids(order_ids)
+
     async def get_user_orders(self) -> OrderResponse:
         return self.kuru_api.get_user_orders(self.wallet_address)
+
+    async def get_user_orders_by_sdk_cloids(self, cloids: List[str]) -> OrderResponse:
+        return self.kuru_api.get_orders_by_sdk_cloid(self.market_address, self.wallet_address, cloids)
 
     def get_all_orders(self) -> List[OrderRequest]:
         """Get all order requests regardless of status"""
