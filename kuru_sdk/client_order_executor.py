@@ -77,10 +77,7 @@ class ClientOrderExecutor:
             if self.tx_queue:
                 tx_hash, orders = self.tx_queue.popleft()
                 try:
-                    receipt = await asyncio.to_thread(
-                        self.web3.eth.wait_for_transaction_receipt,
-                        tx_hash
-                    )
+                    receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
 
                     if receipt.status == 1:
                         order_created_events = self.orderbook.decode_logs(receipt)

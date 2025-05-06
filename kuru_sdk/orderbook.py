@@ -172,7 +172,7 @@ class Orderbook:
             # Default to 2x current base fee for maxFeePerGas
             # Get base fee from latest block
             base_fee = (await self.web3.eth.get_block('latest'))['baseFeePerGas']
-            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or self.web3.eth.max_priority_fee
+            tx['maxPriorityFeePerGas'] = tx_options.max_priority_fee_per_gas or await self.web3.eth.max_priority_fee
             tx['maxFeePerGas'] = base_fee + tx['maxPriorityFeePerGas']
             # Default priority fee (can be adjusted based on network conditions)
 
