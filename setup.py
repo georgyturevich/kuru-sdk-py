@@ -4,7 +4,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="kuru-sdk",
+    name="kuru-sdk-fork",
     version="0.3.0",
     author="Kuru Labs",
     author_email="tech@kurulabs.xyz",
