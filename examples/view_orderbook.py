@@ -10,7 +10,7 @@ sys.path.append(project_root)
 from kuru_sdk.client_order_executor import ClientOrderExecutor
 
 
-from web3 import Web3
+from web3 import AsyncWeb3, AsyncHTTPProvider
 from kuru_sdk.margin import MarginAccount
 import os
 
@@ -29,7 +29,7 @@ ADDRESSES = {
 WS_URL = "https://ws.testnet.kuru.io"
 
 async def main():
-    web3 = Web3(Web3.HTTPProvider(NETWORK_RPC))
+    web3 = AsyncWeb3(AsyncHTTPProvider(NETWORK_RPC))
     
     client = ClientOrderExecutor(
         web3=web3,

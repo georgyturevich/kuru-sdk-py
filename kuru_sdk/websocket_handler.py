@@ -32,7 +32,7 @@ class WebSocketHandler:
             self.logger = logging.getLogger(__name__)
         else:
             self.logger = None
-        
+
         # Store callback functions
         self._on_order_created = on_order_created
         self._on_trade = on_trade
@@ -89,7 +89,7 @@ class WebSocketHandler:
         """Log info message if logger is enabled"""
         if self.logger:
             self.logger.info(message)
-    
+
     def _log_error(self, message):
         """Log error message if logger is enabled"""
         if self.logger:
@@ -170,7 +170,7 @@ class WebSocketHandler:
         cloids = None
         if self.client_order_executor:
             cloids = [self.client_order_executor.get_cloid_by_order_id(order_id) for order_id in payload['orderIds']]
-            
+
         return OrderCancelledPayload(
             order_ids=payload['orderIds'],
             cloids=cloids,

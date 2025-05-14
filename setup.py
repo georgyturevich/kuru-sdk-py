@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="kuru-sdk",
-    version="0.2.8",
+    name="kuru-sdk-fork",
+    version="0.3.0",
     author="Kuru Labs",
     author_email="tech@kurulabs.xyz",
     description="Python SDK for Kuru's Central Limit Orderbook (CLOB)",

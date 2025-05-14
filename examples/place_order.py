@@ -8,7 +8,7 @@ sys.path.append(project_root)
 from kuru_sdk.types import OrderRequest, TxOptions
 from kuru_sdk.client_order_executor import ClientOrderExecutor
 from kuru_sdk.websocket_handler import WebSocketHandler
-from web3 import Web3
+from web3 import AsyncWeb3, AsyncHTTPProvider
 import os
 import asyncio
 from dotenv import load_dotenv
@@ -35,14 +35,14 @@ async def main():
     shutdown_event = asyncio.Future()
 
     client = ClientOrderExecutor(
-        web3=Web3(Web3.HTTPProvider(NETWORK_RPC)),
+        web3=AsyncWeb3(AsyncHTTPProvider(NETWORK_RPC)),
         contract_address=ADDRESSES['orderbook'],
         private_key=os.getenv("PK"),
     )
 
     # Get address from private key
     account_address = client.web3.eth.account.from_key(os.getenv("PK")).address
-    
+
     ws_url = f"wss://ws.testnet.kuru.io"
     ws_client = WebSocketHandler(
         client_order_executor=client,

@@ -1,7 +1,9 @@
-from web3 import Web3
+from web3 import AsyncWeb3
+from web3 import AsyncHTTPProvider
 import web3.types
 from kuru_sdk.orderbook import Orderbook, TxOptions
 from typing import Dict, List, Optional, Callable, Awaitable, Any, Union
+
 from kuru_sdk.types import OrderCreatedEvent, OrderRequest, OrderResponse, TradeResponse, OrderRequestWithStatus
 from kuru_sdk.api import KuruAPI
 import asyncio
@@ -10,17 +12,31 @@ from collections import deque
 
 class ClientOrderExecutor:
     def __init__(self,
-                 web3: Web3,
+                 web3: AsyncWeb3,
                  contract_address: str,
                  private_key: Optional[str] = None,
                  kuru_api_url: Optional[str] = None,
                  logger: Union[logging.Logger, bool] = True,
              ):
         
-        self.web3 = web3
-        self.orderbook = Orderbook(web3, contract_address, private_key, logger=logger)
+        # Ensure we have an AsyncWeb3 instance
+        if not isinstance(web3, AsyncWeb3):
+            if hasattr(web3, 'provider') and hasattr(web3.provider, 'endpoint_uri'):
+                endpoint = web3.provider.endpoint_uri
+                self.web3 = AsyncWeb3(AsyncHTTPProvider(endpoint))
+            else:
+                raise ValueError("Cannot determine provider endpoint for Web3 instance")
+        else:
+            self.web3 = web3
+
+        # Use orderbook with async web3
+        self.orderbook = Orderbook(self.web3, contract_address, private_key, logger=logger)
         self.kuru_api = KuruAPI(kuru_api_url)
-        self.wallet_address = self.web3.eth.account.from_key(private_key).address
+
+        # Store account info
+        if private_key:
+            self.account = web3.eth.account.from_key(private_key)
+            self.wallet_address = self.account.address
         
         # Set up logger
         if isinstance(logger, logging.Logger):
@@ -29,7 +45,7 @@ class ClientOrderExecutor:
             self.logger = logging.getLogger(__name__)
         else:
             self.logger = None
-        
+
         self.market_address = contract_address
         # storage dicts
         self.cloid_to_order_id: Dict[str, int] = {}
@@ -47,25 +63,22 @@ class ClientOrderExecutor:
         if not self.is_processing:
             self.is_processing = True
             self.tx_processor_task = asyncio.create_task(self._process_tx_queue())
-    
+
     async def stop_tx_processor(self):
         """Stop the background transaction processor"""
         if self.is_processing and self.tx_processor_task:
             self.is_processing = False
             await self.tx_processor_task
             self.tx_processor_task = None
-    
+
     async def _process_tx_queue(self):
         """Background task to process transaction receipts"""
         while self.is_processing:
             if self.tx_queue:
                 tx_hash, orders = self.tx_queue.popleft()
                 try:
-                    receipt = await asyncio.to_thread(
-                        self.web3.eth.wait_for_transaction_receipt, 
-                        tx_hash
-                    )
-                    
+                    receipt = await self.web3.eth.wait_for_transaction_receipt(tx_hash)
+
                     if receipt.status == 1:
                         order_created_events = self.orderbook.decode_logs(receipt)
                         self.match_orders_with_events(orders, order_created_events, receipt)
@@ -78,13 +91,13 @@ class ClientOrderExecutor:
                             self.cloid_to_order[order.cloid] = OrderRequestWithStatus(**order.__dict__)
 
                         self._log_error(f"Batch order failed: Transaction status {receipt.status}, tx_hash: {receipt.transactionHash.hex()}")
-                    
+
                     # Execute callback if one exists
                     if tx_hash in self.tx_callbacks:
                         callback, callback_args = self.tx_callbacks.pop(tx_hash)
                         if callback:
                             await callback(receipt, *callback_args)
-                        
+
                 except Exception as e:
                     self._log_error(f"Error processing transaction {tx_hash}: {e}")
             else:
@@ -92,8 +105,8 @@ class ClientOrderExecutor:
                 await asyncio.sleep(0.1)
 
     async def place_order(
-        self, 
-        order: OrderRequest, 
+        self,
+        order: OrderRequest,
         tx_options: Optional[TxOptions] = TxOptions(),
         callback: Optional[Callable[[Any, OrderRequest], Awaitable[None]]] = None,
         callback_args: tuple = (),
@@ -103,12 +116,12 @@ class ClientOrderExecutor:
         Place an order with the given parameters
         Returns the cloid (client order ID) for the order
         """
-        
+
         # Generate cloid if not provided
         if not order.cloid:
             # We'll temporarily set a placeholder and update it after getting tx_hash
             order.cloid = "pending_cloid_"
-        
+
         cloid = order.cloid
         market_address = order.market_address
 
@@ -171,7 +184,7 @@ class ClientOrderExecutor:
                     market_address=market_address,
                     cloids=order.cancel_cloids,
                     tx_options=tx_options,
-                    callback=callback, 
+                    callback=callback,
                     callback_args=callback_args,
                     async_execution=async_execution
                 )
@@ -190,10 +203,10 @@ class ClientOrderExecutor:
             # Store the callback if provided
             if callback:
                 self.tx_callbacks[tx_hash] = (callback, callback_args)
-            
+
             # Add to processing queue
             self.tx_queue.append((tx_hash, [order]))
-            
+
             return order.cloid
 
         except Exception as e:
@@ -203,8 +216,8 @@ class ClientOrderExecutor:
     async def cancel_orders(
         self,
         market_address: str,
-        cloids: Optional[List[str]] = None, 
-        order_ids: Optional[List[int]] = None, 
+        cloids: Optional[List[str]] = None,
+        order_ids: Optional[List[int]] = None,
         tx_options: Optional[TxOptions] = TxOptions(),
         callback: Optional[Callable[[Any], Awaitable[None]]] = None,
         callback_args: tuple = (),
@@ -236,20 +249,20 @@ class ClientOrderExecutor:
                     cancel_orders.append(cancel_order)
                 else:
                     raise ValueError(f"Order ID not found for cloid: {cloid}")
-        
+
         tx_hash = await self.orderbook.batch_orders(
-            order_ids_to_cancel=order_ids, 
+            order_ids_to_cancel=order_ids,
             tx_options=tx_options,
             async_execution=async_execution
         )
-        
+
         # Store the callback if provided
         if callback:
             self.tx_callbacks[tx_hash] = (callback, callback_args)
-        
+
         # Add to processing queue
         self.tx_queue.append((tx_hash, cancel_orders))
-        
+
         return tx_hash
     
     async def batch_orders(
@@ -272,7 +285,7 @@ class ClientOrderExecutor:
         post_only = False
         buy_tick_normalization = []
         sell_tick_normalization = []
-        
+
         # Ensure the tx processor is running
         await self.start_tx_processor()
 
@@ -365,7 +378,7 @@ class ClientOrderExecutor:
         for order in orders:
             if order.order_type == "cancel" or order.order_type == "market":
                 self._set_order_status(order, "fulfilled", receipt)
-                
+
                 if order.order_type == "cancel":
                     if order.cancel_cloids:
                         for cloid in order.cancel_cloids:
@@ -401,20 +414,24 @@ class ClientOrderExecutor:
 
     ## Kuru API
     async def get_order_history(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> OrderResponse:
-        return self.kuru_api.get_order_history(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
+        return await self.kuru_api.get_order_history(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
     
     async def get_trades(self, start_timestamp: Optional[int] = None, end_timestamp: Optional[int] = None) -> TradeResponse:
-        return self.kuru_api.get_trades(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
+        return await self.kuru_api.get_trades(self.market_address, self.wallet_address, start_timestamp, end_timestamp)
     
     async def get_orders_by_ids(self, order_ids: List[int]) -> OrderResponse:
-        return self.kuru_api.get_orders_by_ids(self.market_address, order_ids)
+        return await self.kuru_api.get_orders_by_ids(self.market_address, order_ids)
 
     async def get_orders_by_cloids(self, cloids: List[str]) -> OrderResponse:
         order_ids = [self.cloid_to_order_id[cloid] for cloid in cloids]
         return await self.get_orders_by_ids(order_ids)
-
+    
     async def get_user_orders(self) -> OrderResponse:
-        return self.kuru_api.get_user_orders(self.wallet_address)
+        return await self.kuru_api.get_user_orders(self.wallet_address)
+
+    async def close(self):
+        """Close the API client session"""
+        await self.kuru_api.close()
 
     async def get_user_orders_by_sdk_cloids(self, cloids: List[str]) -> OrderResponse:
         return self.kuru_api.get_orders_by_sdk_cloid(self.market_address, self.wallet_address, cloids)
@@ -424,6 +441,7 @@ class ClientOrderExecutor:
         return list(self.cloid_to_order.values())
 
     def get_pending_orders(self) -> List[OrderRequest]:
+
         """Get all pending order requests"""
         return [order for order in self.cloid_to_order.values() if order.status == "pending"]
 
@@ -435,7 +453,7 @@ class ClientOrderExecutor:
         """Log info message if logger is enabled"""
         if self.logger:
             self.logger.info(message)
-    
+
     def _log_error(self, message):
         """Log error message if logger is enabled"""
         if self.logger:
