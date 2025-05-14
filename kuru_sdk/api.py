@@ -15,8 +15,14 @@ class KuruAPI:
       return self.session
 
     async def get_user_orders(self, user_address: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Order]:
+        params = {}
+        if limit is not None:
+            params['limit'] = limit
+        if offset is not None:
+            params['offset'] = offset
+
         session = await self._ensure_session()
-        async with session.get(f"{self.url}/orders/user/{user_address}", params={"limit": limit, "offset": offset}) as response:
+        async with session.get(f"{self.url}/orders/user/{user_address}", params=params) as response:
             response_json = await response.json()
 
         if isinstance(response_json, dict) and 'data' in response_json and 'data' in response_json['data']:
@@ -40,8 +46,14 @@ class KuruAPI:
         return []
 
     async def get_active_orders(self, user_address: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Order]:
+        params = {}
+        if limit is not None:
+            params['limit'] = limit
+        if offset is not None:
+            params['offset'] = offset
+
         session = await self._ensure_session()
-        async with session.get(f"{self.url}/{user_address}/user/orders/active", params={"limit": limit, "offset": offset}) as response:
+        async with session.get(f"{self.url}/{user_address}/user/orders/active", params=params) as response:
             response_json = await response.json()
 
 
